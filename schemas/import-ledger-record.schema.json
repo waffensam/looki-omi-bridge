@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.looki-omi-bridge/schemas/import-ledger-record.schema.json",
+  "title": "Bridge Ledger Record",
+  "type": "object",
+  "required": [
+    "idempotencyKey",
+    "target",
+    "status",
+    "looki",
+    "createdAt",
+    "updatedAt"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^looki:.+:.+$"
+    },
+    "target": {
+      "enum": ["conversation", "memory"]
+    },
+    "status": {
+      "enum": ["planned", "skipped", "transcribed", "imported", "failed"]
+    },
+    "decision": {
+      "enum": ["import", "skip", "review"]
+    },
+    "looki": {
+      "type": "object",
+      "required": ["momentId", "startTime", "endTime"],
+      "additionalProperties": false,
+      "properties": {
+        "momentId": { "type": "string", "minLength": 1 },
+        "title": { "type": "string" },
+        "startTime": { "type": "string", "format": "date-time" },
+        "endTime": { "type": "string", "format": "date-time" },
+        "durationMs": { "type": "integer", "minimum": 0 },
+        "mediaTypes": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "content": { "type": "string" },
+        "writePolicy": {
+          "enum": ["auto_write", "stage_only", "never_write"]
+        },
+        "evidenceDepth": {
+          "enum": [
+            "moment_summary",
+            "targeted_media_required",
+            "targeted_media",
+            "user_review"
+          ]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "eventDate": { "type": "string" },
+        "eventType": { "type": "string" },
+        "tags": {
+          "type": "array",
+          "items": { "type": "string" }
+        }
+      }
+    },
+    "asr": {
+      "type": "object",
+      "required": ["provider"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": { "type": "string" },
+        "orderId": { "type": "string" },
+        "transcriptSha256": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        }
+      }
+    },
+    "omi": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "conversationId": { "type": "string" },
+        "memoryId": { "type": "string" },
+        "method": {
+          "enum": ["from_segments", "text_fallback", "memory_create"]
+        },
+        "source": { "enum": ["unknown", "looki"] },
+        "richMetadataSynced": { "type": "boolean" }
+      }
+    },
+    "local": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enriched": { "type": "boolean" },
+        "sqliteCacheOnly": { "type": "boolean" }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": ["stage", "message", "retryable"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "enum": ["looki", "asr", "normalize", "memory", "omi", "ledger"]
+        },
+        "message": { "type": "string" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" }
+  }
+}

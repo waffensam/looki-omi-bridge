@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.looki-omi-bridge/schemas/normalized-transcript.schema.json",
+  "title": "Normalized Transcript",
+  "type": "object",
+  "required": ["provider", "text", "segments"],
+  "additionalProperties": false,
+  "properties": {
+    "provider": {
+      "type": "string",
+      "minLength": 1
+    },
+    "providerOrderId": {
+      "type": "string"
+    },
+    "text": {
+      "type": "string"
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["text", "speaker", "isUser", "start", "end"],
+        "additionalProperties": false,
+        "properties": {
+          "text": { "type": "string", "minLength": 1 },
+          "speaker": {
+            "type": "string",
+            "pattern": "^SPEAKER_[0-9]{2}$"
+          },
+          "isUser": { "type": "boolean" },
+          "start": { "type": "number", "minimum": 0 },
+          "end": { "type": "number", "exclusiveMinimum": 0 }
+        }
+      }
+    }
+  }
+}

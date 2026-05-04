@@ -1,0 +1,15 @@
+{
+  "source": "unknown",
+  "language": "zh",
+  "started_at": "2026-04-28T08:42:12.470000+08:00",
+  "finished_at": "2026-04-28T08:42:37.759000+08:00",
+  "transcript_segments": [
+    {
+      "text": "今天晚上别忘了拿快递啊在我到家之后你能认识我的家吗？通过录像判断还是定位判断。",
+      "speaker": "SPEAKER_00",
+      "is_user": true,
+      "start": 4.08,
+      "end": 18.7
+    }
+  ]
+}

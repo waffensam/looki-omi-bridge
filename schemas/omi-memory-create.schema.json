@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.looki-omi-bridge/schemas/omi-memory-create.schema.json",
+  "title": "Omi Memory Create Payload",
+  "type": "object",
+  "required": ["content", "visibility", "tags"],
+  "additionalProperties": false,
+  "properties": {
+    "content": {
+      "type": "string",
+      "minLength": 1
+    },
+    "visibility": {
+      "enum": ["private", "public"]
+    },
+    "category": {
+      "enum": ["manual", "system", "interesting"]
+    },
+    "tags": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}

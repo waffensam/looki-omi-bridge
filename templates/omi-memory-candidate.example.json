@@ -1,0 +1,34 @@
+{
+  "idempotencyKey": "looki:memory:2026-05-03:family_milestone:4434298e-126b-44ca-9a75-f2fd9e5722fa",
+  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+  "eventDate": "2026-05-03",
+  "sourceKind": "multimodal_cluster",
+  "sourceMomentIds": [
+    "4434298e-126b-44ca-9a75-f2fd9e5722fa",
+    "dc698f94-6dbf-48a9-9a19-d5e8b3a7a224",
+    "5d816c3f-bd14-4aea-af14-fdd3f2d9ec92"
+  ],
+  "eventType": "family_milestone",
+  "confidence": 0.92,
+  "evidenceDepth": "targeted_media",
+  "writePolicy": "auto_write",
+  "visibility": "private",
+  "tags": ["family_milestone"],
+  "headline": "孩子的新自行车日",
+  "contextSummary": "Looki 当日音视频显示，用户与孩子完成了一次儿童自行车选购、店内调试、离店骑行和夜间试骑，属于亲子成长事件。",
+  "currentActivity": "处理 Looki 每日音视频并筛选有价值记忆",
+  "evidence": [
+    {
+      "kind": "visual",
+      "summary": "店内画面显示儿童20寸自行车陈列、工作室调试和孩子傍晚骑/推新车离店。",
+      "confidence": 0.95,
+      "sourceMomentId": "4434298e-126b-44ca-9a75-f2fd9e5722fa"
+    },
+    {
+      "kind": "asr",
+      "summary": "店员或服务台相关音频提到查看购物记录，离店片段出现小心和天色已晚的提醒。",
+      "confidence": 0.75,
+      "sourceMomentId": "184648_parking_load"
+    }
+  ]
+}
