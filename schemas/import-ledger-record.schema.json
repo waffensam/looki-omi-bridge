@@ -21,7 +21,15 @@
       "enum": ["conversation", "memory"]
     },
     "status": {
-      "enum": ["planned", "skipped", "transcribed", "imported", "failed"]
+      "enum": [
+        "queued",
+        "processing",
+        "planned",
+        "skipped",
+        "transcribed",
+        "imported",
+        "failed"
+      ]
     },
     "decision": {
       "enum": ["import", "skip", "review"]
@@ -47,6 +55,7 @@
       "additionalProperties": false,
       "properties": {
         "content": { "type": "string" },
+        "candidateIdempotencyKey": { "type": "string" },
         "writePolicy": {
           "enum": ["auto_write", "stage_only", "never_write"]
         },
@@ -111,6 +120,31 @@
         },
         "message": { "type": "string" },
         "retryable": { "type": "boolean" }
+      }
+    },
+    "progress": {
+      "type": "object",
+      "required": ["stage", "message", "updatedAt"],
+      "additionalProperties": false,
+      "properties": {
+        "stage": {
+          "enum": [
+            "queued",
+            "looki",
+            "memory_gate",
+            "memory_write",
+            "audio_lookup",
+            "audio_download",
+            "asr_upload",
+            "asr_poll",
+            "omi_write",
+            "ledger",
+            "done"
+          ]
+        },
+        "message": { "type": "string" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "updatedAt": { "type": "string", "format": "date-time" }
       }
     },
     "createdAt": { "type": "string", "format": "date-time" },

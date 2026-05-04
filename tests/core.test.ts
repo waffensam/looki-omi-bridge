@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtemp } from "node:fs/promises";
+import { mkdtemp, readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, it } from "node:test";
 
 import type { AppLedgerRecord } from "@/src/app-types";
-import type { ImportStatus } from "@/src/contracts";
+import type { ImportStatus, LookiMemoryCandidate } from "@/src/contracts";
+import { buildOmiMemoryCreatePayload } from "@/src/memory";
 import {
   conversationIdempotencyKey,
   memoryIdempotencyKey,
@@ -72,6 +73,25 @@ describe("XFYun signing", () => {
   });
 });
 
+describe("memory payload boundaries", () => {
+  it("keeps rich Looki metadata out of the cloud core memory payload", () => {
+    const payload = buildOmiMemoryCreatePayload(testMemoryCandidate());
+    const raw = JSON.stringify(payload);
+
+    assert.deepEqual(payload, {
+      content:
+        "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+      visibility: "private",
+      category: "manual",
+      tags: ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"],
+    });
+    assert.equal(raw.includes("contextSummary"), false);
+    assert.equal(raw.includes("headline"), false);
+    assert.equal(raw.includes("sourceMomentIds"), false);
+    assert.equal(raw.includes("confidence"), false);
+  });
+});
+
 describe("file store import jobs", () => {
   it("returns queued and processing jobs in update order", async () => {
     const dir = await mkdtemp(path.join(tmpdir(), "looki-omi-bridge-"));
@@ -96,6 +116,29 @@ describe("file store import jobs", () => {
   });
 });
 
+describe("checked JSON artifacts", () => {
+  it("parses schemas and templates", async () => {
+    for (const file of [
+      "schemas/import-ledger-record.schema.json",
+      "schemas/omi-memory-candidate.schema.json",
+      "schemas/omi-memory-create.schema.json",
+      "templates/omi-memory-candidate.example.json",
+      "templates/omi-memory-create.example.json",
+      "templates/omi-from-segments.example.json",
+    ]) {
+      JSON.parse(await readFile(file, "utf8"));
+    }
+
+    const ledgerLines = (
+      await readFile("templates/import-ledger.example.jsonl", "utf8")
+    )
+      .split("\n")
+      .filter(Boolean);
+    assert.ok(ledgerLines.length > 0);
+    for (const line of ledgerLines) JSON.parse(line);
+  });
+});
+
 function testLedgerRecord(
   uid: string,
   key: string,
@@ -117,5 +160,39 @@ function testLedgerRecord(
       createdAt: timestamp,
       updatedAt: timestamp,
     },
+  };
+}
+
+function testMemoryCandidate(): LookiMemoryCandidate {
+  return {
+    idempotencyKey:
+      "looki:memory:2026-05-03:family_milestone:4434298e-126b-44ca-9a75-f2fd9e5722fa",
+    content:
+      "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+    eventDate: "2026-05-03",
+    sourceKind: "multimodal_cluster",
+    sourceMomentIds: [
+      "4434298e-126b-44ca-9a75-f2fd9e5722fa",
+      "dc698f94-6dbf-48a9-9a19-d5e8b3a7a224",
+    ],
+    eventType: "family_milestone",
+    confidence: 0.92,
+    evidenceDepth: "targeted_media",
+    writePolicy: "auto_write",
+    visibility: "private",
+    tags: ["family_milestone"],
+    headline: "孩子的新自行车日",
+    contextSummary:
+      "Looki 当日音视频显示，用户与孩子完成了一次儿童自行车选购、店内调试、离店骑行和夜间试骑，属于亲子成长事件。",
+    currentActivity: "处理 Looki 每日音视频并筛选有价值记忆",
+    evidence: [
+      {
+        kind: "visual",
+        summary:
+          "店内画面显示儿童自行车陈列、工作室调试和孩子傍晚骑/推新车离店。",
+        confidence: 0.95,
+        sourceMomentId: "4434298e-126b-44ca-9a75-f2fd9e5722fa",
+      },
+    ],
   };
 }

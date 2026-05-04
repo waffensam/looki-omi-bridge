@@ -127,14 +127,16 @@ Write memory through `POST /v2/integrations/{app_id}/user/memories`:
 
 ```json
 {
-  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
-  "visibility": "private",
-  "category": "manual",
-  "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
+  "memories": [
+    {
+      "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
+    }
+  ]
 }
 ```
 
-Do not include date or source prose in the memory body. Keep `headline`, `context_summary`, evidence depth, provider audit, and source moment ids in the candidate and ledger layer.
+Do not include date or source prose in the memory body. Do not send `contextSummary` as top-level `text` when using explicit `memories[]`; that would turn local/ledger context into a second extraction source. Keep `headline`, `context_summary`, evidence depth, provider audit, and source moment ids in the candidate and ledger layer.
 
 ### Step 4: Optional Local Enrichment
 

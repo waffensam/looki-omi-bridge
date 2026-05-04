@@ -116,7 +116,31 @@ Rules:
 
 ## Cloud Core Payload
 
-Default endpoint:
+Default endpoint for this Omi App bridge:
+
+```text
+POST /v2/integrations/{app_id}/user/memories?uid={user_id}
+Authorization: Bearer {OMI_APP_API_KEY}
+```
+
+The App Integration API request should use explicit memory objects only:
+
+```json
+{
+  "memories": [
+    {
+      "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
+    }
+  ]
+}
+```
+
+Do not include `contextSummary` as top-level `text` when writing explicit
+memories. It is local/ledger context, not a second cloud memory extraction
+source.
+
+Developer API alternative:
 
 ```text
 POST /v1/dev/user/memories
@@ -130,7 +154,7 @@ memories:read
 memories:write
 ```
 
-Write only:
+If using the Developer API, write only:
 
 ```json
 {
@@ -141,7 +165,7 @@ Write only:
 }
 ```
 
-Do not send these in the Developer API core write:
+Do not send these in either cloud core write:
 
 ```text
 headline
@@ -233,7 +257,7 @@ Every write attempt should produce or update one ledger record:
 2. Validate `content`, `confidence`, `sourceMomentIds`, and `contextSummary`.
 3. Generate tags: `looki`, `looki_daily`, `looki_YYYY_MM_DD`, `eventType`, plus candidate tags.
 4. Dedupe against Omi memories and ledger.
-5. If `writePolicy=auto_write`, call `POST /v1/dev/user/memories` with core payload only.
+5. If `writePolicy=auto_write`, call `POST /v2/integrations/{app_id}/user/memories` with explicit `memories[]` core payload only. Use `POST /v1/dev/user/memories` only when this bridge is running under a user Developer API key instead of the Omi App API key.
 6. Record `omi.memoryId`, `method=memory_create`, and `richMetadataSynced=false`.
 7. Optionally enrich the local row for display.
 8. Record `local.enriched=true` and `local.sqliteCacheOnly=true`.

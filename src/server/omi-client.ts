@@ -48,9 +48,6 @@ export class OmiIntegrationClient {
       `/v2/integrations/${encodeURIComponent(this.appId)}/user/memories`,
       uid,
       {
-        text: candidate.contextSummary,
-        text_source: "other",
-        text_source_spec: "looki",
         memories: [
           {
             content: candidate.content,

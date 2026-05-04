@@ -122,12 +122,14 @@ The durable core payload is `schemas/omi-memory-create.schema.json`:
 }
 ```
 
-Prefer a configured Omi Developer API key with:
+For this Omi App bridge, the hosted app-compatible write path is `POST /v2/integrations/{app_id}/user/memories?uid={user_id}` with explicit `memories[]` objects. Send only `content` and generated tags in each memory object; do not send `contextSummary` as top-level `text`.
+
+If the bridge is running under a configured Omi Developer API key, use:
 
 - `memories:read`
 - `memories:write`
 
-Use `POST /v1/dev/user/memories` for single memory writes and `GET /v1/dev/user/memories` for dedupe reads. `headline` can remain on the `LookiMemoryCandidate` and local rich metadata, but is not part of the Developer API core create payload. User-auth `/v3/memories` should be treated the same for bridge purposes because the current Python `MemoryDB.from_memory()` path does not preserve headline or rich context fields.
+Use `POST /v1/dev/user/memories` for single memory writes and `GET /v1/dev/user/memories` for dedupe reads. `headline` can remain on the `LookiMemoryCandidate` and local rich metadata, but is not part of either cloud core create payload. User-auth `/v3/memories` should be treated the same for bridge purposes because the current Python `MemoryDB.from_memory()` path does not preserve headline or rich context fields.
 
 Read existing memories before writing so the bridge can keep/patch/skip instead of creating duplicates.
 

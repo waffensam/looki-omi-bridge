@@ -154,6 +154,10 @@ Successful import:
 }
 ```
 
+For Omi App Integration imports, `conversationId` is best-effort. The v2
+create endpoint returns `{}` and creates the conversation asynchronously, so a
+readback timeout must not turn a successful write into `failed`.
+
 ## Memory Lane
 
 The memory lane starts after discovery and targeted evidence gathering.
