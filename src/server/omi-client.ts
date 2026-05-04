@@ -64,8 +64,9 @@ export class OmiIntegrationClient {
       `/v2/integrations/${encodeURIComponent(this.appId)}/memories`,
       uid,
       { limit: "1000", offset: "0" },
-    );
-    return memories.memories.find(
+      readTimeoutMs("OMI_VERIFY_TIMEOUT_MS", 10_000),
+    ).catch(() => undefined);
+    return memories?.memories.find(
       (memory) => memory.content === candidate.content,
     )?.id;
   }
@@ -100,10 +101,11 @@ export class OmiIntegrationClient {
         offset: "0",
         max_transcript_segments: "-1",
       },
-    );
+      readTimeoutMs("OMI_VERIFY_TIMEOUT_MS", 10_000),
+    ).catch(() => undefined);
     const firstText =
       transcript.segments[0]?.text || transcript.text.slice(0, 32);
-    return response.conversations.find((conversation) =>
+    return response?.conversations.find((conversation) =>
       (conversation.transcript_segments || []).some((segment) =>
         segment.text.includes(firstText),
       ),
@@ -136,6 +138,7 @@ export class OmiIntegrationClient {
     path: string,
     uid: string,
     query: Record<string, string>,
+    timeoutMs = readTimeoutMs("OMI_API_TIMEOUT_MS", 30_000),
   ): Promise<T> {
     const url = this.url(path, uid);
     for (const [key, value] of Object.entries(query)) {
@@ -148,7 +151,7 @@ export class OmiIntegrationClient {
           Authorization: `Bearer ${this.apiKey}`,
         },
       },
-      readTimeoutMs("OMI_API_TIMEOUT_MS", 30_000),
+      timeoutMs,
       "Omi integration read",
     );
     if (!response.ok) {
