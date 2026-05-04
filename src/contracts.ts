@@ -73,12 +73,26 @@ export interface OmiFromSegmentsPayload {
 
 export type ImportDecision = "import" | "skip" | "review";
 export type ImportStatus =
+  | "queued"
+  | "processing"
   | "planned"
   | "skipped"
   | "transcribed"
   | "imported"
   | "failed";
 export type ImportTarget = "conversation" | "memory";
+export type ImportStage =
+  | "queued"
+  | "looki"
+  | "memory_gate"
+  | "memory_write"
+  | "audio_lookup"
+  | "audio_download"
+  | "asr_upload"
+  | "asr_poll"
+  | "omi_write"
+  | "ledger"
+  | "done";
 export type MemoryWritePolicy = "auto_write" | "stage_only" | "never_write";
 export type MemoryEvidenceDepth =
   | "moment_summary"
@@ -136,6 +150,7 @@ export interface ImportLedgerRecord {
   };
   memory?: {
     content?: string;
+    candidateIdempotencyKey?: string;
     writePolicy?: MemoryWritePolicy;
     evidenceDepth?: MemoryEvidenceDepth;
     confidence?: number;
@@ -163,6 +178,12 @@ export interface ImportLedgerRecord {
     stage: "looki" | "asr" | "normalize" | "memory" | "omi" | "ledger";
     message: string;
     retryable: boolean;
+  };
+  progress?: {
+    stage: ImportStage;
+    message: string;
+    attempt?: number;
+    updatedAt: IsoDateTime;
   };
   createdAt: IsoDateTime;
   updatedAt: IsoDateTime;

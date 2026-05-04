@@ -98,7 +98,7 @@ export interface ImportRequest {
 export interface ImportResultItem {
   momentId: string;
   target: "memory" | "conversation";
-  status: "imported" | "skipped" | "failed";
+  status: "queued" | "processing" | "imported" | "skipped" | "failed";
   reason?: string;
   omiId?: string;
   candidate?: LookiMemoryCandidate;

@@ -2,7 +2,7 @@ import { mkdir, readFile, writeFile } from "fs/promises";
 import path from "path";
 
 import type { AppLedgerRecord, UserProfile } from "@/src/app-types";
-import type { AppStore } from "./types";
+import type { AppStore, ImportJobQuery } from "./types";
 
 interface FileStoreShape {
   profiles: UserProfile[];
@@ -30,6 +30,16 @@ export class FileAppStore implements AppStore {
   async listLedger(uid: string): Promise<AppLedgerRecord[]> {
     const store = await readStore();
     return store.ledger.filter((entry) => entry.uid === uid);
+  }
+
+  async listImportJobs(query: ImportJobQuery = {}): Promise<AppLedgerRecord[]> {
+    const store = await readStore();
+    const statuses = new Set(query.statuses || ["queued"]);
+    return store.ledger
+      .filter((entry) => statuses.has(entry.record.status))
+      .filter((entry) => !query.uid || entry.uid === query.uid)
+      .sort((a, b) => a.record.updatedAt.localeCompare(b.record.updatedAt))
+      .slice(0, query.limit || store.ledger.length);
   }
 
   async findLedger(
