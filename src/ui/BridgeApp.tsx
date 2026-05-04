@@ -1,4 +1,4 @@
-'use client';
+"use client";
 
 import {
   AlertTriangle,
@@ -14,9 +14,9 @@ import {
   RefreshCcw,
   Settings2,
   UploadCloud,
-} from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
+} from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 
 import type {
   AppLedgerRecord,
@@ -25,10 +25,13 @@ import type {
   ProviderMode,
   PublicProfile,
   SanitizedLookiMoment,
-} from '@/src/app-types';
-import type { RuntimeStatus } from '@/src/server/status';
+} from "@/src/app-types";
+import type { RuntimeStatus } from "@/src/server/status";
 
-type SelectionState = Record<string, { importMemory: boolean; importConversation: boolean }>;
+type SelectionState = Record<
+  string,
+  { importMemory: boolean; importConversation: boolean }
+>;
 
 interface ApiProfileResponse {
   profile: PublicProfile | null;
@@ -47,11 +50,13 @@ interface ApiLedgerResponse {
 }
 
 export function BridgeApp() {
-  const [uid, setUid] = useState('');
+  const [uid, setUid] = useState("");
   const [date, setDate] = useState(localDate());
-  const [lookiBaseUrl, setLookiBaseUrl] = useState('https://open.looki.ai/api/v1');
-  const [lookiApiKey, setLookiApiKey] = useState('');
-  const [providerMode, setProviderMode] = useState<ProviderMode>('managed');
+  const [lookiBaseUrl, setLookiBaseUrl] = useState(
+    "https://open.looki.ai/api/v1",
+  );
+  const [lookiApiKey, setLookiApiKey] = useState("");
+  const [providerMode, setProviderMode] = useState<ProviderMode>("managed");
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [moments, setMoments] = useState<SanitizedLookiMoment[]>([]);
@@ -63,7 +68,7 @@ export function BridgeApp() {
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlUid = params.get('uid');
+    const urlUid = params.get("uid");
     if (urlUid) setUid(urlUid);
     void refreshStatus();
   }, []);
@@ -75,17 +80,39 @@ export function BridgeApp() {
   }, [uid]);
 
   const selectedCount = useMemo(
-    () => Object.values(selection).filter((item) => item.importMemory || item.importConversation).length,
+    () =>
+      Object.values(selection).filter(
+        (item) => item.importMemory || item.importConversation,
+      ).length,
     [selection],
   );
+  const hasActiveJobs = useMemo(
+    () =>
+      ledger.some(
+        (entry) =>
+          entry.record.status === "queued" ||
+          entry.record.status === "processing",
+      ),
+    [ledger],
+  );
+
+  useEffect(() => {
+    if (!uid.trim() || !hasActiveJobs) return;
+    const timer = window.setInterval(() => {
+      void refreshLedger(uid.trim());
+    }, 3000);
+    return () => window.clearInterval(timer);
+  }, [hasActiveJobs, uid]);
 
   async function refreshStatus() {
-    setStatus(await api<RuntimeStatus>('/api/status'));
+    setStatus(await api<RuntimeStatus>("/api/status"));
   }
 
   async function refreshProfile(nextUid: string) {
     try {
-      const response = await api<ApiProfileResponse>(`/api/profile?uid=${encodeURIComponent(nextUid)}`);
+      const response = await api<ApiProfileResponse>(
+        `/api/profile?uid=${encodeURIComponent(nextUid)}`,
+      );
       setProfile(response.profile);
       if (response.profile) {
         setLookiBaseUrl(response.profile.lookiBaseUrl);
@@ -99,7 +126,9 @@ export function BridgeApp() {
   async function refreshLedger(nextUid = uid.trim()) {
     if (!nextUid) return;
     try {
-      const response = await api<ApiLedgerResponse>(`/api/ledger?uid=${encodeURIComponent(nextUid)}`);
+      const response = await api<ApiLedgerResponse>(
+        `/api/ledger?uid=${encodeURIComponent(nextUid)}`,
+      );
       setLedger(response.ledger);
     } catch {
       setLedger([]);
@@ -107,9 +136,9 @@ export function BridgeApp() {
   }
 
   async function saveProfile() {
-    await run('profile', async () => {
-      const response = await api<ApiProfileResponse>('/api/profile', {
-        method: 'POST',
+    await run("profile", async () => {
+      const response = await api<ApiProfileResponse>("/api/profile", {
+        method: "POST",
         body: JSON.stringify({
           uid,
           lookiBaseUrl,
@@ -118,28 +147,35 @@ export function BridgeApp() {
         }),
       });
       setProfile(response.profile);
-      setLookiApiKey('');
+      setLookiApiKey("");
     });
   }
 
   async function loadMoments() {
-    await run('moments', async () => {
+    await run("moments", async () => {
       const response = await api<ApiMomentsResponse>(
         `/api/moments?uid=${encodeURIComponent(uid.trim())}&date=${encodeURIComponent(date)}`,
       );
       setMoments(response.moments);
-      setSelection(Object.fromEntries(response.moments.map((moment) => [moment.id, defaultSelection(moment)])));
+      setSelection(
+        Object.fromEntries(
+          response.moments.map((moment) => [
+            moment.id,
+            defaultSelection(moment),
+          ]),
+        ),
+      );
       setResult(null);
     });
   }
 
   async function importSelected() {
-    const selections: ImportRequest['selections'] = Object.entries(selection)
+    const selections: ImportRequest["selections"] = Object.entries(selection)
       .filter(([, item]) => item.importMemory || item.importConversation)
       .map(([momentId, item]) => ({ momentId, ...item }));
-    await run('import', async () => {
-      const response = await api<ApiImportResponse>('/api/import', {
-        method: 'POST',
+    await run("import", async () => {
+      const response = await api<ApiImportResponse>("/api/import", {
+        method: "POST",
         body: JSON.stringify({ uid, date, selections }),
       });
       setResult(response.result);
@@ -153,7 +189,7 @@ export function BridgeApp() {
     try {
       await action();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : '操作失败');
+      setError(caught instanceof Error ? caught.message : "操作失败");
     } finally {
       setBusy(null);
     }
@@ -169,10 +205,14 @@ export function BridgeApp() {
         <div className="status-strip">
           <StatusPill label="Omi" ok={Boolean(status?.omiConfigured)} />
           <StatusPill label="ASR" ok={Boolean(status?.asrConfigured)} />
-          <StatusPill label="LLM" ok={Boolean(status?.llmConfigured)} muted={!status?.llmConfigured} />
+          <StatusPill
+            label="LLM"
+            ok={Boolean(status?.llmConfigured)}
+            muted={!status?.llmConfigured}
+          />
           <span className="pill neutral">
             <Database size={15} />
-            {status?.store || 'file'}
+            {status?.store || "file"}
           </span>
         </div>
       </section>
@@ -182,24 +222,36 @@ export function BridgeApp() {
           <PanelTitle icon={<Settings2 size={18} />} title="连接" />
           <label>
             Omi UID
-            <input value={uid} onChange={(event) => setUid(event.target.value)} placeholder="uid" />
+            <input
+              value={uid}
+              onChange={(event) => setUid(event.target.value)}
+              placeholder="uid"
+            />
           </label>
           <label>
             Looki Base URL
-            <input value={lookiBaseUrl} onChange={(event) => setLookiBaseUrl(event.target.value)} />
+            <input
+              value={lookiBaseUrl}
+              onChange={(event) => setLookiBaseUrl(event.target.value)}
+            />
           </label>
           <label>
             Looki API Key
             <input
               value={lookiApiKey}
               onChange={(event) => setLookiApiKey(event.target.value)}
-              placeholder={profile ? '已保存，留空则沿用' : '粘贴 API key'}
+              placeholder={profile ? "已保存，留空则沿用" : "粘贴 API key"}
               type="password"
             />
           </label>
           <label>
             Provider
-            <select value={providerMode} onChange={(event) => setProviderMode(event.target.value as ProviderMode)}>
+            <select
+              value={providerMode}
+              onChange={(event) =>
+                setProviderMode(event.target.value as ProviderMode)
+              }
+            >
               <option value="managed">managed</option>
               <option value="user_key" disabled>
                 user_key
@@ -209,8 +261,16 @@ export function BridgeApp() {
               </option>
             </select>
           </label>
-          <button className="primary" disabled={!uid || busy === 'profile'} onClick={saveProfile}>
-            {busy === 'profile' ? <Loader2 className="spin" size={17} /> : <KeyRound size={17} />}
+          <button
+            className="primary"
+            disabled={!uid || busy === "profile"}
+            onClick={saveProfile}
+          >
+            {busy === "profile" ? (
+              <Loader2 className="spin" size={17} />
+            ) : (
+              <KeyRound size={17} />
+            )}
             保存连接
           </button>
           {profile ? (
@@ -220,7 +280,9 @@ export function BridgeApp() {
               更新：{formatDateTime(profile.updatedAt)}
             </p>
           ) : (
-            <p className="fine-print">连接信息只保存在服务端存储，页面不会回显 API key。</p>
+            <p className="fine-print">
+              连接信息只保存在服务端存储，页面不会回显 API key。
+            </p>
           )}
         </aside>
 
@@ -228,14 +290,30 @@ export function BridgeApp() {
           <div className="toolbar">
             <label className="date-field">
               <CalendarDays size={17} />
-              <input value={date} onChange={(event) => setDate(event.target.value)} type="date" />
+              <input
+                value={date}
+                onChange={(event) => setDate(event.target.value)}
+                type="date"
+              />
             </label>
-            <button disabled={!uid || busy === 'moments'} onClick={loadMoments}>
-              {busy === 'moments' ? <Loader2 className="spin" size={17} /> : <RefreshCcw size={17} />}
+            <button disabled={!uid || busy === "moments"} onClick={loadMoments}>
+              {busy === "moments" ? (
+                <Loader2 className="spin" size={17} />
+              ) : (
+                <RefreshCcw size={17} />
+              )}
               读取 Looki
             </button>
-            <button className="primary" disabled={!selectedCount || busy === 'import'} onClick={importSelected}>
-              {busy === 'import' ? <Loader2 className="spin" size={17} /> : <UploadCloud size={17} />}
+            <button
+              className="primary"
+              disabled={!selectedCount || busy === "import"}
+              onClick={importSelected}
+            >
+              {busy === "import" ? (
+                <Loader2 className="spin" size={17} />
+              ) : (
+                <UploadCloud size={17} />
+              )}
               导入选中
             </button>
             <span className="count">{selectedCount} selected</span>
@@ -248,6 +326,13 @@ export function BridgeApp() {
             </div>
           ) : null}
 
+          {hasActiveJobs ? (
+            <div className="notice info">
+              <Loader2 className="spin" size={18} />
+              后台导入处理中，右侧 Ledger 会持续更新阶段和失败原因。
+            </div>
+          ) : null}
+
           <div className="moment-list">
             {moments.length === 0 ? (
               <EmptyState />
@@ -257,7 +342,12 @@ export function BridgeApp() {
                   key={moment.id}
                   moment={moment}
                   value={selection[moment.id] || defaultSelection(moment)}
-                  onChange={(next) => setSelection((current) => ({ ...current, [moment.id]: next }))}
+                  onChange={(next) =>
+                    setSelection((current) => ({
+                      ...current,
+                      [moment.id]: next,
+                    }))
+                  }
                 />
               ))
             )}
@@ -269,7 +359,11 @@ export function BridgeApp() {
         <aside className="ledger-panel">
           <div className="ledger-title">
             <PanelTitle icon={<History size={18} />} title="Ledger" />
-            <button className="icon-button" disabled={!uid} onClick={() => void refreshLedger()}>
+            <button
+              className="icon-button"
+              disabled={!uid}
+              onClick={() => void refreshLedger()}
+            >
               <RefreshCcw size={16} />
             </button>
           </div>
@@ -277,7 +371,12 @@ export function BridgeApp() {
             {ledger.length === 0 ? (
               <p className="fine-print">暂无记录。</p>
             ) : (
-              ledger.map((entry) => <LedgerRow key={`${entry.uid}:${entry.record.idempotencyKey}`} entry={entry} />)
+              ledger.map((entry) => (
+                <LedgerRow
+                  key={`${entry.uid}:${entry.record.idempotencyKey}`}
+                  entry={entry}
+                />
+              ))
             )}
           </div>
         </aside>
@@ -293,9 +392,12 @@ function MomentRow({
 }: {
   moment: SanitizedLookiMoment;
   value: { importMemory: boolean; importConversation: boolean };
-  onChange: (next: { importMemory: boolean; importConversation: boolean }) => void;
+  onChange: (next: {
+    importMemory: boolean;
+    importConversation: boolean;
+  }) => void;
 }) {
-  const hasAudio = moment.mediaTypes.includes('AUDIO');
+  const hasAudio = moment.mediaTypes.includes("AUDIO");
   return (
     <article className="moment-row">
       <div className="moment-main">
@@ -317,7 +419,9 @@ function MomentRow({
         <label className="toggle">
           <input
             checked={value.importMemory}
-            onChange={(event) => onChange({ ...value, importMemory: event.target.checked })}
+            onChange={(event) =>
+              onChange({ ...value, importMemory: event.target.checked })
+            }
             type="checkbox"
           />
           <Brain size={16} />
@@ -327,7 +431,9 @@ function MomentRow({
           <input
             checked={value.importConversation}
             disabled={!hasAudio}
-            onChange={(event) => onChange({ ...value, importConversation: event.target.checked })}
+            onChange={(event) =>
+              onChange({ ...value, importConversation: event.target.checked })
+            }
             type="checkbox"
           />
           <Mic size={16} />
@@ -344,10 +450,18 @@ function ResultPanel({ result }: { result: ImportResult }) {
       <PanelTitle icon={<CheckCircle2 size={18} />} title="结果" />
       <div className="result-grid">
         {result.items.map((item, index) => (
-          <div key={`${item.momentId}:${item.target}:${index}`} className={`result-item ${item.status}`}>
+          <div
+            key={`${item.momentId}:${item.target}:${index}`}
+            className={`result-item ${item.status}`}
+          >
             <span>{item.target}</span>
             <strong>{item.status}</strong>
-            <small>{item.reason || item.omiId || item.candidate?.headline || item.transcript?.text.slice(0, 40)}</small>
+            <small>
+              {item.reason ||
+                item.omiId ||
+                item.candidate?.headline ||
+                item.transcript?.text.slice(0, 40)}
+            </small>
           </div>
         ))}
       </div>
@@ -356,23 +470,43 @@ function ResultPanel({ result }: { result: ImportResult }) {
 }
 
 function LedgerRow({ entry }: { entry: AppLedgerRecord }) {
+  const progress =
+    entry.record.error?.message || entry.record.progress?.message;
   return (
     <div className="ledger-row">
       <div>
-        <strong>{entry.record.looki.title || entry.record.looki.momentId}</strong>
-        <span>{entry.record.target}</span>
+        <strong>
+          {entry.record.looki.title || entry.record.looki.momentId}
+        </strong>
+        <span>
+          {entry.record.target}
+          {entry.record.progress?.stage
+            ? ` · ${entry.record.progress.stage}`
+            : ""}
+        </span>
+        {progress ? <p className="ledger-progress">{progress}</p> : null}
       </div>
       <div className="ledger-meta">
-        <span className={`mini-status ${entry.record.status}`}>{entry.record.status}</span>
+        <span className={`mini-status ${entry.record.status}`}>
+          {entry.record.status}
+        </span>
         <time>{formatDateTime(entry.record.updatedAt)}</time>
       </div>
     </div>
   );
 }
 
-function StatusPill({ label, ok, muted }: { label: string; ok: boolean; muted?: boolean }) {
+function StatusPill({
+  label,
+  ok,
+  muted,
+}: {
+  label: string;
+  ok: boolean;
+  muted?: boolean;
+}) {
   return (
-    <span className={`pill ${ok ? 'ok' : muted ? 'muted' : 'warn'}`}>
+    <span className={`pill ${ok ? "ok" : muted ? "muted" : "warn"}`}>
       {ok ? <CheckCircle2 size={15} /> : <AlertTriangle size={15} />}
       {label}
     </span>
@@ -400,7 +534,7 @@ function EmptyState() {
 function defaultSelection(moment: SanitizedLookiMoment) {
   return {
     importMemory: true,
-    importConversation: moment.mediaTypes.includes('AUDIO'),
+    importConversation: moment.mediaTypes.includes("AUDIO"),
   };
 }
 
@@ -408,11 +542,13 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...init,
     headers: {
-      'Content-Type': 'application/json',
+      "Content-Type": "application/json",
       ...(init?.headers || {}),
     },
   });
-  const payload = (await response.json().catch(() => ({}))) as { error?: string };
+  const payload = (await response.json().catch(() => ({}))) as {
+    error?: string;
+  };
   if (!response.ok) {
     throw new Error(payload.error || `HTTP ${response.status}`);
   }
@@ -428,16 +564,19 @@ function localDate(): string {
 function shortTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value.slice(11, 16);
-  return date.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  return date.toLocaleTimeString("zh-CN", {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }
 
 function formatDateTime(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return value;
-  return date.toLocaleString('zh-CN', {
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 }
