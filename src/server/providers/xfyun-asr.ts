@@ -29,17 +29,18 @@ export class XfyunAsrProvider implements AsrProvider {
       );
     }
 
+    const signatureRandom = nonce();
     const uploadParams: Record<string, string | number> = {
       appId: config.xfyunAppId,
       accessKeyId: config.xfyunApiKey,
       dateTime: timestamp(),
-      signatureRandom: nonce(),
+      signatureRandom,
       fileSize: input.audio.byteLength,
       fileName: input.fileName,
       duration: input.durationMs || 0,
       language: config.xfyunLanguage,
     };
-    const uploadUrl = signedUrl(
+    const uploadRequest = buildXfyunSignedRequest(
       config.xfyunBaseUrl,
       "/v2/upload",
       uploadParams,
@@ -47,11 +48,12 @@ export class XfyunAsrProvider implements AsrProvider {
     );
     await input.onProgress?.("asr_upload", "上传音频到讯飞");
     const uploadResponse = await fetchWithTimeout(
-      uploadUrl,
+      uploadRequest.url,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/octet-stream",
+          signature: uploadRequest.signature,
         },
         body: input.audio,
       },
@@ -78,6 +80,7 @@ export class XfyunAsrProvider implements AsrProvider {
       config.xfyunApiKey,
       config.xfyunApiSecret,
       orderId,
+      signatureRandom,
       input.onProgress,
     );
     const transcript = normalizeXfyunResult(resultPayload, orderId);
@@ -97,6 +100,7 @@ export class XfyunAsrProvider implements AsrProvider {
     apiKey: string,
     apiSecret: string,
     orderId: string,
+    signatureRandom: string,
     onProgress?: XfyunProgress,
   ): Promise<unknown> {
     const startedAt = Date.now();
@@ -109,17 +113,23 @@ export class XfyunAsrProvider implements AsrProvider {
       const params: Record<string, string> = {
         accessKeyId: apiKey,
         dateTime: timestamp(),
-        signatureRandom: nonce(),
+        signatureRandom,
         orderId,
         resultType: "transfer",
       };
-      const url = signedUrl(baseUrl, "/v2/getResult", params, apiSecret);
+      const resultRequest = buildXfyunSignedRequest(
+        baseUrl,
+        "/v2/getResult",
+        params,
+        apiSecret,
+      );
       const response = await fetchWithTimeout(
-        url,
+        resultRequest.url,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
+            signature: resultRequest.signature,
           },
           body: "{}",
         },
@@ -144,19 +154,18 @@ export class XfyunAsrProvider implements AsrProvider {
   }
 }
 
-function signedUrl(
+export function buildXfyunSignedRequest(
   baseUrl: string,
   path: string,
   params: Record<string, string | number>,
   secret: string,
-): URL {
+): { url: URL; signature: string } {
   const url = joinUrl(baseUrl, path);
   const signature = signParams(params, secret);
   for (const [key, value] of Object.entries(params)) {
     url.searchParams.set(key, String(value));
   }
-  url.searchParams.set("signature", signature);
-  return url;
+  return { url, signature };
 }
 
 function signParams(

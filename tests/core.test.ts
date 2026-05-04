@@ -10,6 +10,7 @@ import {
   conversationIdempotencyKey,
   memoryIdempotencyKey,
 } from "@/src/server/idempotency";
+import { buildXfyunSignedRequest } from "@/src/server/providers/xfyun-asr";
 import { joinUrl } from "@/src/server/url";
 
 describe("joinUrl", () => {
@@ -40,6 +41,33 @@ describe("idempotency keys", () => {
     assert.equal(
       memoryIdempotencyKey("2026-05-04", "family_milestone", "moment-1"),
       "looki:memory:2026-05-04:family_milestone:moment-1",
+    );
+  });
+});
+
+describe("XFYun signing", () => {
+  it("returns signature for request headers instead of query params", () => {
+    const request = buildXfyunSignedRequest(
+      "https://office-api-ist-dx.iflyaisol.com",
+      "/v2/upload",
+      {
+        appId: "app",
+        accessKeyId: "key",
+        dateTime: "2026-05-04T22:00:00+0800",
+        signatureRandom: "abc123abc123abcd",
+        fileSize: 123,
+        fileName: "sample.m4a",
+        duration: 1000,
+        language: "autodialect",
+      },
+      "secret",
+    );
+
+    assert.ok(request.signature.length > 0);
+    assert.equal(request.url.searchParams.has("signature"), false);
+    assert.equal(
+      request.url.searchParams.get("signatureRandom"),
+      "abc123abc123abcd",
     );
   });
 });
