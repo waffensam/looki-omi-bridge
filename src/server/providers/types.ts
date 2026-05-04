@@ -1,5 +1,6 @@
 import type { LookiMoment, ProviderAudit } from "@/src/app-types";
 import type {
+  ImportStage,
   LookiMemoryCandidate,
   NormalizedTranscript,
 } from "@/src/contracts.js";
@@ -26,5 +27,10 @@ export interface AsrProvider {
     audio: ArrayBuffer;
     fileName: string;
     durationMs?: number;
+    onProgress?: (
+      stage: ImportStage,
+      message: string,
+      attempt?: number,
+    ) => Promise<void> | void;
   }): Promise<AsrResult>;
 }

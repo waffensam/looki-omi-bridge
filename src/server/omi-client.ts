@@ -4,6 +4,7 @@ import type {
 } from "@/src/contracts.js";
 import { buildMemoryTags } from "@/src/memory";
 import { getOmiIntegrationConfig } from "./config";
+import { fetchWithTimeout, readTimeoutMs } from "./fetch-timeout";
 import { joinUrl } from "./url";
 
 interface IntegrationMemory {
@@ -111,14 +112,19 @@ export class OmiIntegrationClient {
 
   private async post(path: string, uid: string, body: unknown): Promise<void> {
     const url = this.url(path, uid);
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
-        "Content-Type": "application/json",
+    const response = await fetchWithTimeout(
+      url,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
       },
-      body: JSON.stringify(body),
-    });
+      readTimeoutMs("OMI_API_TIMEOUT_MS", 30_000),
+      "Omi integration write",
+    );
     if (!response.ok) {
       throw new Error(
         `Omi integration request failed with HTTP ${response.status}`,
@@ -135,11 +141,16 @@ export class OmiIntegrationClient {
     for (const [key, value] of Object.entries(query)) {
       url.searchParams.set(key, value);
     }
-    const response = await fetch(url, {
-      headers: {
-        Authorization: `Bearer ${this.apiKey}`,
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          Authorization: `Bearer ${this.apiKey}`,
+        },
       },
-    });
+      readTimeoutMs("OMI_API_TIMEOUT_MS", 30_000),
+      "Omi integration read",
+    );
     if (!response.ok) {
       throw new Error(
         `Omi integration read failed with HTTP ${response.status}`,

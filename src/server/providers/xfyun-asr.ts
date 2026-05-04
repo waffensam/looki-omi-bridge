@@ -1,19 +1,26 @@
-import { createHmac, randomUUID } from "crypto";
+import { createHmac, randomBytes } from "crypto";
 
 import type {
+  ImportStage,
   NormalizedTranscript,
   NormalizedTranscriptSegment,
 } from "@/src/contracts.js";
 import { getManagedProviderConfig } from "../config";
+import { fetchWithTimeout, readTimeoutMs } from "../fetch-timeout";
 import { sha256 } from "../hash";
 import { joinUrl } from "../url";
 import type { AsrProvider, AsrResult } from "./types";
+
+interface XfyunProgress {
+  (stage: ImportStage, message: string, attempt?: number): Promise<void> | void;
+}
 
 export class XfyunAsrProvider implements AsrProvider {
   async transcribeAudio(input: {
     audio: ArrayBuffer;
     fileName: string;
     durationMs?: number;
+    onProgress?: XfyunProgress;
   }): Promise<AsrResult> {
     const config = getManagedProviderConfig();
     if (!config.xfyunAppId || !config.xfyunApiKey || !config.xfyunApiSecret) {
@@ -26,7 +33,7 @@ export class XfyunAsrProvider implements AsrProvider {
       appId: config.xfyunAppId,
       accessKeyId: config.xfyunApiKey,
       dateTime: timestamp(),
-      signatureRandom: randomUUID(),
+      signatureRandom: nonce(),
       fileSize: input.audio.byteLength,
       fileName: input.fileName,
       duration: input.durationMs || 0,
@@ -38,19 +45,29 @@ export class XfyunAsrProvider implements AsrProvider {
       uploadParams,
       config.xfyunApiSecret,
     );
-    const form = new FormData();
-    form.append("file", new Blob([input.audio]), input.fileName);
-    const uploadResponse = await fetch(uploadUrl, {
-      method: "POST",
-      body: form,
-    });
+    await input.onProgress?.("asr_upload", "上传音频到讯飞");
+    const uploadResponse = await fetchWithTimeout(
+      uploadUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/octet-stream",
+        },
+        body: input.audio,
+      },
+      readTimeoutMs("XFYUN_UPLOAD_TIMEOUT_MS", 120_000),
+      "XFYun upload",
+    );
     if (!uploadResponse.ok) {
       throw new Error(`XFYun upload failed with HTTP ${uploadResponse.status}`);
     }
     const uploadPayload = (await uploadResponse.json()) as {
+      code?: string;
+      descInfo?: string;
       content?: { orderId?: string };
       orderId?: string;
     };
+    assertXfyunSuccess(uploadPayload, "upload");
     const orderId = uploadPayload.content?.orderId || uploadPayload.orderId;
     if (!orderId) {
       throw new Error("XFYun upload response did not include orderId");
@@ -61,6 +78,7 @@ export class XfyunAsrProvider implements AsrProvider {
       config.xfyunApiKey,
       config.xfyunApiSecret,
       orderId,
+      input.onProgress,
     );
     const transcript = normalizeXfyunResult(resultPayload, orderId);
     return {
@@ -79,27 +97,50 @@ export class XfyunAsrProvider implements AsrProvider {
     apiKey: string,
     apiSecret: string,
     orderId: string,
+    onProgress?: XfyunProgress,
   ): Promise<unknown> {
-    for (let attempt = 0; attempt < 30; attempt += 1) {
+    const startedAt = Date.now();
+    const pollTimeoutMs = readTimeoutMs("XFYUN_POLL_TIMEOUT_MS", 900_000);
+    const intervalMs = readTimeoutMs("XFYUN_POLL_INTERVAL_MS", 3_000);
+    let attempt = 0;
+    while (Date.now() - startedAt < pollTimeoutMs) {
+      attempt += 1;
+      await onProgress?.("asr_poll", "等待讯飞转写结果", attempt);
       const params: Record<string, string> = {
         accessKeyId: apiKey,
         dateTime: timestamp(),
-        signatureRandom: randomUUID(),
+        signatureRandom: nonce(),
         orderId,
         resultType: "transfer",
       };
       const url = signedUrl(baseUrl, "/v2/getResult", params, apiSecret);
-      const response = await fetch(url, { method: "POST" });
+      const response = await fetchWithTimeout(
+        url,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: "{}",
+        },
+        readTimeoutMs("XFYUN_RESULT_TIMEOUT_MS", 20_000),
+        "XFYun getResult",
+      );
       if (!response.ok) {
         throw new Error(`XFYun getResult failed with HTTP ${response.status}`);
       }
       const payload = (await response.json()) as {
+        code?: string;
+        descInfo?: string;
         content?: { orderInfo?: { status?: number } };
       };
+      assertXfyunSuccess(payload, "getResult");
       if (payload.content?.orderInfo?.status === 4) return payload;
-      await new Promise((resolve) => setTimeout(resolve, 2000));
+      await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
-    throw new Error("XFYun transcription did not complete in time");
+    throw new Error(
+      `XFYun transcription did not complete within ${pollTimeoutMs}ms`,
+    );
   }
 }
 
@@ -136,9 +177,23 @@ function signParams(
 function timestamp(): string {
   const now = new Date();
   const pad = (value: number) => String(value).padStart(2, "0");
-  return `${now.getUTCFullYear()}${pad(now.getUTCMonth() + 1)}${pad(now.getUTCDate())}${pad(now.getUTCHours())}${pad(
+  return `${now.getUTCFullYear()}-${pad(now.getUTCMonth() + 1)}-${pad(now.getUTCDate())}T${pad(now.getUTCHours())}:${pad(
     now.getUTCMinutes(),
-  )}${pad(now.getUTCSeconds())}`;
+  )}:${pad(now.getUTCSeconds())}+0000`;
+}
+
+function nonce(): string {
+  return randomBytes(8).toString("hex");
+}
+
+function assertXfyunSuccess(
+  payload: { code?: string; descInfo?: string },
+  stage: "upload" | "getResult",
+): void {
+  if (!payload.code || payload.code === "000000") return;
+  throw new Error(
+    `XFYun ${stage} failed: code=${payload.code}${payload.descInfo ? `, descInfo=${payload.descInfo}` : ""}`,
+  );
 }
 
 function normalizeXfyunResult(

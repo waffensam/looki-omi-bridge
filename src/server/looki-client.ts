@@ -3,6 +3,7 @@ import type {
   LookiMoment,
   SanitizedLookiMoment,
 } from "@/src/app-types";
+import { fetchWithTimeout, readTimeoutMs } from "./fetch-timeout";
 import { joinUrl } from "./url";
 
 interface LookiResponse<T> {
@@ -27,7 +28,12 @@ export class LookiClient {
     if (process.env.LOOKI_SKIP_VERIFY === "true") return;
     const verifyUrl = new URL("https://open.looki.ai/api/v1/verify");
     verifyUrl.searchParams.set("endpoint", baseUrl);
-    const response = await fetch(verifyUrl, { method: "GET" });
+    const response = await fetchWithTimeout(
+      verifyUrl,
+      { method: "GET" },
+      readTimeoutMs("LOOKI_VERIFY_TIMEOUT_MS", 15_000),
+      "Looki base_url verification",
+    );
     if (!response.ok) {
       throw new Error(
         `Looki base_url verification failed with HTTP ${response.status}`,
@@ -69,7 +75,12 @@ export class LookiClient {
   }
 
   async downloadFile(temporaryUrl: string): Promise<ArrayBuffer> {
-    const response = await fetch(temporaryUrl);
+    const response = await fetchWithTimeout(
+      temporaryUrl,
+      {},
+      readTimeoutMs("LOOKI_DOWNLOAD_TIMEOUT_MS", 120_000),
+      "Looki media download",
+    );
     if (!response.ok) {
       throw new Error(
         `Looki media download failed with HTTP ${response.status}`,
@@ -79,11 +90,16 @@ export class LookiClient {
   }
 
   private async get<T>(url: URL): Promise<LookiResponse<T>> {
-    const response = await fetch(url, {
-      headers: {
-        "X-API-Key": this.apiKey,
+    const response = await fetchWithTimeout(
+      url,
+      {
+        headers: {
+          "X-API-Key": this.apiKey,
+        },
       },
-    });
+      readTimeoutMs("LOOKI_API_TIMEOUT_MS", 30_000),
+      "Looki API request",
+    );
     if (!response.ok) {
       throw new Error(`Looki API request failed with HTTP ${response.status}`);
     }
