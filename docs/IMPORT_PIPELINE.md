@@ -14,8 +14,9 @@ date = yesterday in user's Looki timezone
 ## Stages
 
 The hosted app does not run long imports inside the browser-triggered HTTP
-request. `POST /api/import` writes one ledger-backed job per selected target and
-returns immediately. A background worker then advances each job through:
+request. `POST /api/import` writes one ledger-backed job per selected target,
+starts a Vercel Workflow run, and returns immediately. The Workflow step then
+advances each job through:
 
 ```text
 queued
@@ -28,7 +29,10 @@ queued
   -> imported | skipped | failed
 ```
 
-Run the worker with:
+Vercel Workflow is the default hosted execution path. It is configured through
+`workflow` and `withWorkflow()` in `next.config.ts`.
+
+The local Node worker is kept as a diagnostic or VPS fallback. Run it with:
 
 ```bash
 npm run worker
@@ -40,7 +44,7 @@ For a one-shot local or VPS cron-style run:
 npm run worker:once
 ```
 
-The worker uses Supabase `import_ledger` as the durable job source. Jobs in
+Both Vercel Workflow and the fallback worker use Supabase `import_ledger` as the durable job source. Jobs in
 `processing` can be picked up again after `IMPORT_WORKER_STALE_PROCESSING_MS`,
 so a crashed worker does not permanently hide the import.
 

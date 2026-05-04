@@ -43,6 +43,8 @@ interface ApiMomentsResponse {
 
 interface ApiImportResponse {
   result: ImportResult;
+  workflowRunId?: string;
+  workflowTriggerError?: string;
 }
 
 interface ApiLedgerResponse {
@@ -179,6 +181,11 @@ export function BridgeApp() {
         body: JSON.stringify({ uid, date, selections }),
       });
       setResult(response.result);
+      if (response.workflowTriggerError) {
+        setError(
+          `导入已入队，但 Vercel Workflow 启动失败：${response.workflowTriggerError}`,
+        );
+      }
       await refreshLedger();
     });
   }

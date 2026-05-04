@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import type { NextConfig } from "next";
+import { withWorkflow } from "workflow/next";
 
 const projectRoot = dirname(fileURLToPath(import.meta.url));
 
@@ -12,4 +13,4 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+export default withWorkflow(nextConfig);
