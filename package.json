@@ -2,7 +2,6 @@
   "name": "looki-omi-bridge",
   "version": "0.1.0",
   "private": true,
-  "type": "module",
   "description": "Omi app for manually importing Looki moments into Omi memories and conversations.",
   "scripts": {
     "dev": "next dev",
