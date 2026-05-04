@@ -13,6 +13,37 @@ date = yesterday in user's Looki timezone
 
 ## Stages
 
+The hosted app does not run long imports inside the browser-triggered HTTP
+request. `POST /api/import` writes one ledger-backed job per selected target and
+returns immediately. A background worker then advances each job through:
+
+```text
+queued
+  -> processing/looki
+  -> processing/audio_lookup | memory_gate
+  -> processing/audio_download
+  -> processing/asr_upload
+  -> processing/asr_poll
+  -> processing/omi_write
+  -> imported | skipped | failed
+```
+
+Run the worker with:
+
+```bash
+npm run worker
+```
+
+For a one-shot local or VPS cron-style run:
+
+```bash
+npm run worker:once
+```
+
+The worker uses Supabase `import_ledger` as the durable job source. Jobs in
+`processing` can be picked up again after `IMPORT_WORKER_STALE_PROCESSING_MS`,
+so a crashed worker does not permanently hide the import.
+
 ### 1. Candidate Discovery
 
 For the conversation lane, fetch Looki moments for the target date and select:
