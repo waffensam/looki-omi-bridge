@@ -106,6 +106,8 @@ Scheduler             daily incremental run
 8. Store dates in tags such as `looki_2026_05_03`, not in the memory body.
 9. Record Omi memory id and whether rich metadata is backend-synced or local-cache-only.
 
+For implementation handoff, use `docs/HANDOFF_LOOKI_MEMORY_FORMAT.md` as the canonical Looki -> Omi memory format guide.
+
 ## Segmented Import Payload
 
 The schema remains in the repo for the future Developer API segment-preserving path:
