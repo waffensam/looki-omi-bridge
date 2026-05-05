@@ -11,6 +11,7 @@ src/
     looki.ts
     omi.ts
   asr/
+    bailian.ts
     xfyun.ts
   pipeline/
     normalize.ts
@@ -28,6 +29,6 @@ Implementation order:
 2. payload normalizer and memory payload builder
 3. dry-run importer
 4. Looki connector
-5. XFYun adapter
+5. Bailian and XFYun adapters
 6. Omi connector
 7. scheduler or plugin wrapper

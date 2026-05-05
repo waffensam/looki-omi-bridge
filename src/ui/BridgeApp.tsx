@@ -69,6 +69,15 @@ interface ApiImportResponse {
 
 interface ApiLedgerResponse {
   ledger: AppLedgerRecord[];
+  usage?: MonthlyAsrUsageSummary;
+}
+
+interface MonthlyAsrUsageSummary {
+  month: string;
+  asrRunCount: number;
+  originalDurationMs: number;
+  billableSpeechMs: number;
+  estimatedCostUsd: number;
 }
 
 export function BridgeApp() {
@@ -93,6 +102,7 @@ export function BridgeApp() {
     {},
   );
   const [ledger, setLedger] = useState<AppLedgerRecord[]>([]);
+  const [usage, setUsage] = useState<MonthlyAsrUsageSummary | null>(null);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -206,9 +216,12 @@ export function BridgeApp() {
   async function refreshLedger(nextUid = uid.trim()) {
     if (!nextUid) return;
     try {
-      setLedger(await fetchLedger(nextUid));
+      const response = await fetchLedger(nextUid);
+      setLedger(response.ledger);
+      setUsage(response.usage || null);
     } catch {
       setLedger([]);
+      setUsage(null);
     }
   }
 
@@ -237,13 +250,20 @@ export function BridgeApp() {
         api<ApiMomentsResponse>(
           `/api/moments?uid=${encodeURIComponent(nextUid)}&date=${encodeURIComponent(date)}`,
         ),
-        fetchLedger(nextUid).catch(() => []),
+        fetchLedger(nextUid).catch((): ApiLedgerResponse => ({ ledger: [] })),
       ]);
-      const nextAudioStatus = buildImportStatusMap(nextLedger, "conversation");
-      const nextMemoryStatus = buildImportStatusMap(nextLedger, "memory");
+      const nextAudioStatus = buildImportStatusMap(
+        nextLedger.ledger,
+        "conversation",
+      );
+      const nextMemoryStatus = buildImportStatusMap(
+        nextLedger.ledger,
+        "memory",
+      );
       setMoments(response.moments);
       setForYouItems(response.forYouItems || []);
-      setLedger(nextLedger);
+      setLedger(nextLedger.ledger);
+      setUsage(nextLedger.usage || null);
       if (response.forYouError) {
         setError(`For You 读取失败，已仅返回 moments：${response.forYouError}`);
       }
@@ -348,11 +368,6 @@ export function BridgeApp() {
         <div className="status-strip">
           <StatusPill label="Omi" ok={Boolean(status?.omiConfigured)} />
           <StatusPill label="ASR" ok={Boolean(status?.asrConfigured)} />
-          <StatusPill
-            label="LLM"
-            ok={Boolean(status?.llmConfigured)}
-            muted={!status?.llmConfigured}
-          />
           <span className="pill neutral">
             <Database size={15} />
             {status?.store || "file"}
@@ -566,6 +581,7 @@ export function BridgeApp() {
               <RefreshCcw size={16} />
             </button>
           </div>
+          {usage ? <AsrUsageSummary usage={usage} /> : null}
           <div className="ledger-list">
             {ledger.length === 0 ? (
               <p className="fine-print">暂无记录。</p>
@@ -1001,6 +1017,18 @@ function LedgerRow({ entry }: { entry: AppLedgerRecord }) {
   );
 }
 
+function AsrUsageSummary({ usage }: { usage: MonthlyAsrUsageSummary }) {
+  return (
+    <div className="usage-summary">
+      <span>{usage.month} ASR</span>
+      <strong>{formatDurationMs(usage.billableSpeechMs)}</strong>
+      <small>
+        {usage.asrRunCount} 次 · 约 ${usage.estimatedCostUsd.toFixed(4)}
+      </small>
+    </div>
+  );
+}
+
 function StatusPill({
   label,
   ok,
@@ -1222,17 +1250,25 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
-async function fetchLedger(uid: string): Promise<AppLedgerRecord[]> {
-  const response = await api<ApiLedgerResponse>(
-    `/api/ledger?uid=${encodeURIComponent(uid)}`,
-  );
-  return response.ledger;
+async function fetchLedger(uid: string): Promise<ApiLedgerResponse> {
+  return api<ApiLedgerResponse>(`/api/ledger?uid=${encodeURIComponent(uid)}`);
 }
 
 function localDate(): string {
   const date = new Date();
   const offset = date.getTimezoneOffset() * 60_000;
   return new Date(date.getTime() - offset).toISOString().slice(0, 10);
+}
+
+function formatDurationMs(durationMs: number): string {
+  const minutes = Math.round(durationMs / 60_000);
+  if (durationMs > 0 && minutes === 0) return "<1 分钟";
+  if (minutes < 60) return `${minutes} 分钟`;
+  const hours = Math.floor(minutes / 60);
+  const remainingMinutes = minutes % 60;
+  return remainingMinutes > 0
+    ? `${hours} 小时 ${remainingMinutes} 分钟`
+    : `${hours} 小时`;
 }
 
 function shortTime(value: string): string {

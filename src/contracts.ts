@@ -56,6 +56,8 @@ export interface NormalizedTranscriptSegment {
 export interface NormalizedTranscript {
   provider: string;
   providerOrderId?: string;
+  originalDurationMs?: number;
+  billableSpeechMs?: number;
   text: string;
   segments: NormalizedTranscriptSegment[];
 }
@@ -181,8 +183,13 @@ export interface ImportLedgerRecord {
   };
   asr?: {
     provider: string;
+    model?: string;
     orderId?: string;
     transcriptSha256?: string;
+    originalDurationMs?: number;
+    billableSpeechMs?: number;
+    estimatedCostUsd?: number;
+    billingUnitPriceUsdPerSecond?: number;
   };
   omi?: {
     conversationId?: string;

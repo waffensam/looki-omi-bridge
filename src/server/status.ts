@@ -2,7 +2,6 @@ export interface RuntimeStatus {
   store: "supabase" | "file";
   omiConfigured: boolean;
   asrConfigured: boolean;
-  llmConfigured: boolean;
   providerMode: string;
 }
 
@@ -15,12 +14,24 @@ export function getRuntimeStatus(): RuntimeStatus {
     omiConfigured: Boolean(
       process.env.OMI_APP_ID && process.env.OMI_APP_API_KEY,
     ),
-    asrConfigured: Boolean(
+    asrConfigured: isAsrConfigured(),
+    providerMode: process.env.AI_PROVIDER_MODE || "managed",
+  };
+}
+
+function isAsrConfigured(): boolean {
+  const provider = (process.env.ASR_PROVIDER || "bailian").toLowerCase();
+  if (provider === "bailian" || provider === "dashscope") {
+    return Boolean(
+      process.env.BAILIAN_API_KEY || process.env.DASHSCOPE_API_KEY,
+    );
+  }
+  if (provider === "xfyun") {
+    return Boolean(
       process.env.XFYUN_APP_ID &&
       process.env.XFYUN_API_KEY &&
       process.env.XFYUN_API_SECRET,
-    ),
-    llmConfigured: Boolean(process.env.MANAGED_OPENAI_API_KEY),
-    providerMode: process.env.AI_PROVIDER_MODE || "managed",
-  };
+    );
+  }
+  return false;
 }

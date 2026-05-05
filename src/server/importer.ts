@@ -14,10 +14,12 @@ import type {
   ImportTarget,
 } from "@/src/contracts.js";
 import { sanitizeForYouItem } from "@/src/looki-for-you";
+import { buildAsrLedgerUsage } from "./asr-usage";
 import { findAudioFile } from "./looki-client";
 import { getLookiClientForUid } from "./looki-profile";
 import { OmiIntegrationClient } from "./omi-client";
-import { XfyunAsrProvider } from "./providers/xfyun-asr";
+import { createAsrProvider } from "./providers/asr";
+import type { AsrResult } from "./providers/types";
 import { sha256 } from "./hash";
 import { conversationIdempotencyKey } from "./idempotency";
 import { readTimeoutMs } from "./fetch-timeout";
@@ -316,8 +318,7 @@ async function processForYouMemoryJob(
     job.record.looki.forYouItemId || job.record.looki.momentId;
   const eventDate =
     job.record.memory?.eventDate || job.record.looki.startTime.slice(0, 10);
-  let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] =
-    "looki";
+  let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] = "looki";
   let itemForFailure: SanitizedLookiForYouItem | undefined;
   let sourceForFailure: OmiNativeMemorySource | undefined;
 
@@ -374,10 +375,7 @@ async function processForYouMemoryJob(
             error,
             job.record.createdAt,
           );
-    await appendLedger(
-      uid,
-      failureRecord,
-    );
+    await appendLedger(uid, failureRecord);
     return {
       momentId: forYouItemId,
       target: "memory",
@@ -446,11 +444,13 @@ async function processMemoryJob(
           error,
           job.record.createdAt,
         )
-      : buildFailedLedger(job.record, failureStage, error, job.record.createdAt);
-    await appendLedger(
-      uid,
-      failureRecord,
-    );
+      : buildFailedLedger(
+          job.record,
+          failureStage,
+          error,
+          job.record.createdAt,
+        );
+    await appendLedger(uid, failureRecord);
     return {
       momentId: moment.id,
       target: "memory",
@@ -466,9 +466,10 @@ async function processConversationJob(
   moment: LookiMoment,
   looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
 ): Promise<ImportResultItem> {
-  const asr = new XfyunAsrProvider();
+  const asr = createAsrProvider();
   const omi = new OmiIntegrationClient();
   let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] = "looki";
+  let completedAsrResult: AsrResult | null = null;
 
   try {
     await updateProgress(
@@ -497,20 +498,23 @@ async function processConversationJob(
     }
 
     failureStage = "asr";
-    await updateProgress(job, "processing", "audio_download", "下载临时音频");
-    let audio: ArrayBuffer | null = await looki.downloadFile(
-      audioFile.file.temporary_url,
-    );
+    let audio: ArrayBuffer | null = null;
+    if (asr.inputMode === "audio") {
+      await updateProgress(job, "processing", "audio_download", "下载临时音频");
+      audio = await looki.downloadFile(audioFile.file.temporary_url);
+    }
     const durationMs = audioFile.file.duration_ms ?? undefined;
     try {
       const asrResult = await asr.transcribeAudio({
-        audio,
+        ...(audio ? { audio } : {}),
+        audioUrl: audioFile.file.temporary_url,
         fileName: `${moment.id}.audio`,
         ...(typeof durationMs === "number" ? { durationMs } : {}),
         onProgress: async (stage, message, attempt) => {
           await updateProgress(job, "processing", stage, message, attempt);
         },
       });
+      completedAsrResult = asrResult;
       if (!asrResult.transcript.text.trim()) {
         await appendLedger(
           uid,
@@ -518,6 +522,7 @@ async function processConversationJob(
             job.record,
             "empty_transcript",
             job.record.createdAt,
+            asrResult,
           ),
           { asr: asrResult.audit },
         );
@@ -552,6 +557,7 @@ async function processConversationJob(
           "imported",
           omiId,
           asrResult.transcript.text,
+          asrResult,
           job.record.createdAt,
         ),
         { asr: asrResult.audit },
@@ -569,7 +575,13 @@ async function processConversationJob(
   } catch (error) {
     await appendLedger(
       uid,
-      buildFailedLedger(job.record, failureStage, error, job.record.createdAt),
+      buildFailedLedger(
+        job.record,
+        failureStage,
+        error,
+        job.record.createdAt,
+        completedAsrResult,
+      ),
     );
     return {
       momentId: moment.id,
@@ -838,6 +850,7 @@ function buildConversationLedger(
   status: ImportStatus,
   conversationId: string | undefined,
   transcriptText: string,
+  asrResult: AsrResult,
   createdAt?: string,
 ): ImportLedgerRecord {
   const now = new Date().toISOString();
@@ -847,10 +860,7 @@ function buildConversationLedger(
     status,
     decision: status === "imported" ? "import" : "skip",
     looki: buildLookiLedger(moment),
-    asr: {
-      provider: "xfyun",
-      transcriptSha256: sha256(transcriptText),
-    },
+    asr: buildAsrLedgerUsage(asrResult, sha256(transcriptText)),
     omi: {
       ...(conversationId ? { conversationId } : {}),
       method: "text_fallback",
@@ -870,12 +880,19 @@ function buildSkippedConversationLedger(
   existing: ImportLedgerRecord,
   reason: string,
   createdAt?: string,
+  asrResult?: AsrResult,
 ): ImportLedgerRecord {
   const now = new Date().toISOString();
+  const transcriptText = asrResult?.transcript.text || "";
   return {
     ...existing,
     status: "skipped",
     decision: "skip",
+    ...(asrResult
+      ? {
+          asr: buildAsrLedgerUsage(asrResult, sha256(transcriptText)),
+        }
+      : {}),
     error: {
       stage: "normalize",
       message: reason,
@@ -896,12 +913,19 @@ function buildFailedLedger(
   stage: NonNullable<ImportLedgerRecord["error"]>["stage"],
   error: unknown,
   createdAt?: string,
+  asrResult?: AsrResult | null,
 ): ImportLedgerRecord {
   const now = new Date().toISOString();
+  const transcriptText = asrResult?.transcript.text || "";
   return {
     ...existing,
     status: "failed",
     decision: "import",
+    ...(asrResult
+      ? {
+          asr: buildAsrLedgerUsage(asrResult, sha256(transcriptText)),
+        }
+      : {}),
     error: {
       stage,
       message: error instanceof Error ? error.message : "Import failed",
@@ -1040,7 +1064,10 @@ function uniqueStrings(values: string[]): string[] {
 }
 
 function compactLines(values: string[]): string {
-  return values.map((value) => value.trim()).filter(Boolean).join("\n");
+  return values
+    .map((value) => value.trim())
+    .filter(Boolean)
+    .join("\n");
 }
 
 function stageToProgress(

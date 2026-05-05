@@ -113,8 +113,24 @@ Upload to the configured ASR provider.
 Initial provider:
 
 ```text
-xfyun recording-file ASR large model
+Bailian Paraformer recording-file ASR
 ```
+
+Bailian is the default because Paraformer explicitly reports
+`content_duration` for speech-only metering while preserving original
+sentence/word timestamps. XFYun remains available through
+`ASR_PROVIDER=xfyun`, but current public docs do not show an equivalent
+non-speech-not-billed contract.
+
+For each completed ASR run, persist usage fields in the ledger:
+
+- `asr.model`
+- `asr.originalDurationMs`
+- `asr.billableSpeechMs`
+- `asr.estimatedCostUsd`
+- `asr.billingUnitPriceUsdPerSecond`
+
+The ledger API should aggregate the current month's ASR usage from those fields.
 
 ### 5. Normalize
 

@@ -17,6 +17,11 @@ export interface ManagedProviderConfig {
   llmModel: string;
   openaiApiKey?: string;
   asrProvider: string;
+  bailianApiKey?: string;
+  bailianBaseUrl: string;
+  bailianModel: string;
+  bailianLanguageHints: string[];
+  bailianDiarizationEnabled: boolean;
   xfyunBaseUrl: string;
   xfyunAppId?: string;
   xfyunApiKey?: string;
@@ -54,6 +59,8 @@ export function getOmiOAuthConfig(): OmiOAuthConfig {
 
 export function getManagedProviderConfig(): ManagedProviderConfig {
   const mode = (process.env.AI_PROVIDER_MODE || "managed") as ProviderMode;
+  const bailianApiKey =
+    process.env.BAILIAN_API_KEY || process.env.DASHSCOPE_API_KEY;
   return {
     mode,
     llmProvider: process.env.LLM_PROVIDER || "managed",
@@ -61,7 +68,16 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
     ...(process.env.MANAGED_OPENAI_API_KEY
       ? { openaiApiKey: process.env.MANAGED_OPENAI_API_KEY }
       : {}),
-    asrProvider: process.env.ASR_PROVIDER || "xfyun",
+    asrProvider: process.env.ASR_PROVIDER || "bailian",
+    ...(bailianApiKey ? { bailianApiKey } : {}),
+    bailianBaseUrl:
+      process.env.BAILIAN_BASE_URL || "https://dashscope.aliyuncs.com",
+    bailianModel: process.env.BAILIAN_ASR_MODEL || "paraformer-v2",
+    bailianLanguageHints: parseCsv(
+      process.env.BAILIAN_LANGUAGE_HINTS || "zh,en",
+    ),
+    bailianDiarizationEnabled:
+      process.env.BAILIAN_DIARIZATION_ENABLED === "true",
     xfyunBaseUrl:
       process.env.XFYUN_BASE_URL || "https://office-api-ist-dx.iflyaisol.com",
     ...(process.env.XFYUN_APP_ID
@@ -79,4 +95,11 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
 
 export function getBaseUrl(): string {
   return process.env.APP_BASE_URL || "http://localhost:3000";
+}
+
+function parseCsv(value: string): string[] {
+  return value
+    .split(",")
+    .map((item) => item.trim())
+    .filter(Boolean);
 }

@@ -16,12 +16,18 @@ interface XfyunProgress {
 }
 
 export class XfyunAsrProvider implements AsrProvider {
+  readonly inputMode = "audio" as const;
+
   async transcribeAudio(input: {
-    audio: ArrayBuffer;
+    audio?: ArrayBuffer;
+    audioUrl?: string;
     fileName: string;
     durationMs?: number;
     onProgress?: XfyunProgress;
   }): Promise<AsrResult> {
+    if (!input.audio) {
+      throw new Error("XFYun ASR requires downloaded audio bytes");
+    }
     const config = getManagedProviderConfig();
     if (!config.xfyunAppId || !config.xfyunApiKey || !config.xfyunApiSecret) {
       throw new Error(

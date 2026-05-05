@@ -89,11 +89,16 @@
       "additionalProperties": false,
       "properties": {
         "provider": { "type": "string" },
+        "model": { "type": "string" },
         "orderId": { "type": "string" },
         "transcriptSha256": {
           "type": "string",
           "pattern": "^[a-f0-9]{64}$"
-        }
+        },
+        "originalDurationMs": { "type": "integer", "minimum": 0 },
+        "billableSpeechMs": { "type": "integer", "minimum": 0 },
+        "estimatedCostUsd": { "type": "number", "minimum": 0 },
+        "billingUnitPriceUsdPerSecond": { "type": "number", "minimum": 0 }
       }
     },
     "omi": {

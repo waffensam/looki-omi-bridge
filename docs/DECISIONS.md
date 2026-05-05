@@ -26,11 +26,18 @@ Use:
 
 Do not use `external_integration` for segmented Looki imports. Current Omi processing treats `external_integration` as a text-source path and expects `text_source`, which segmented import payloads do not have.
 
-## D004: XFYun Is An Adapter
+## D004: ASR Provider Boundary
 
 Status: accepted
 
-XFYun is the first ASR adapter because it can produce transcript text and segment timing compatible with Omi. It must remain behind a provider interface so other ASR providers can be added later.
+Bailian Paraformer is the default ASR adapter because its official
+`content_duration` contract bills only audio that is judged to contain speech
+and still returns sentence/word timestamps on the original media timeline.
+
+XFYun remains available through `ASR_PROVIDER=xfyun`, but it is a fallback
+adapter. Current public XFYun docs document uploaded duration/original
+duration, whole-file silence failure, and VAD-style segmentation controls; they
+do not document an equivalent non-speech-not-billed contract.
 
 ## D005: No Per-Run Developer Key Creation
 

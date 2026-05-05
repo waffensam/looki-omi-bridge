@@ -28,8 +28,10 @@ export interface AsrResult {
 }
 
 export interface AsrProvider {
+  inputMode: "audio" | "url";
   transcribeAudio(input: {
-    audio: ArrayBuffer;
+    audio?: ArrayBuffer;
+    audioUrl?: string;
     fileName: string;
     durationMs?: number;
     onProgress?: (

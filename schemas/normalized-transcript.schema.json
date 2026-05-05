@@ -13,6 +13,14 @@
     "providerOrderId": {
       "type": "string"
     },
+    "originalDurationMs": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "billableSpeechMs": {
+      "type": "integer",
+      "minimum": 0
+    },
     "text": {
       "type": "string"
     },

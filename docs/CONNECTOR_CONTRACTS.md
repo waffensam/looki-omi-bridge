@@ -150,8 +150,8 @@ Provider output should be normalized into:
 
 ```json
 {
-  "provider": "xfyun",
-  "providerOrderId": "order id",
+  "provider": "bailian",
+  "providerOrderId": "task id or order id",
   "text": "full transcript",
   "segments": [
     {
@@ -167,6 +167,7 @@ Provider output should be normalized into:
 
 ### Speaker Mapping
 
+- Bailian `speaker_id` 0 -> `SPEAKER_00`
 - XFYun speaker `0` -> `SPEAKER_00`
 - XFYun speaker `1` -> `SPEAKER_01`
 - Missing speaker -> `SPEAKER_00`

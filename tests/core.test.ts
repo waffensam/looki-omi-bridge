@@ -21,6 +21,11 @@ import {
   conversationIdempotencyKey,
   memoryIdempotencyKey,
 } from "@/src/server/idempotency";
+import {
+  buildAsrLedgerUsage,
+  summarizeMonthlyAsrUsage,
+} from "@/src/server/asr-usage";
+import { normalizeBailianTranscriptionResult } from "@/src/server/providers/bailian-asr";
 import { buildXfyunSignedRequest } from "@/src/server/providers/xfyun-asr";
 import { joinUrl } from "@/src/server/url";
 
@@ -80,6 +85,128 @@ describe("XFYun signing", () => {
       request.url.searchParams.get("signatureRandom"),
       "abc123abc123abcd",
     );
+  });
+});
+
+describe("Bailian ASR normalization", () => {
+  it("normalizes sentence timestamps and speaker labels", () => {
+    const transcript = normalizeBailianTranscriptionResult(
+      {
+        properties: {
+          original_duration_in_milliseconds: 60000,
+        },
+        transcripts: [
+          {
+            channel_id: 0,
+            content_duration_in_milliseconds: 4200,
+            text: "提醒我明天买咖啡。",
+            sentences: [
+              {
+                begin_time: 12000,
+                end_time: 16200,
+                text: "提醒我明天买咖啡。",
+                speaker_id: 2,
+              },
+            ],
+          },
+        ],
+      },
+      "task-1",
+    );
+
+    assert.equal(transcript.provider, "bailian");
+    assert.equal(transcript.providerOrderId, "task-1");
+    assert.equal(transcript.originalDurationMs, 60000);
+    assert.equal(transcript.billableSpeechMs, 4200);
+    assert.equal(transcript.text, "提醒我明天买咖啡。");
+    assert.deepEqual(transcript.segments, [
+      {
+        text: "提醒我明天买咖啡。",
+        speaker: "SPEAKER_02",
+        isUser: false,
+        start: 12,
+        end: 16.2,
+      },
+    ]);
+  });
+});
+
+describe("ASR usage accounting", () => {
+  it("records billable speech duration and monthly estimated cost", () => {
+    const transcript = normalizeBailianTranscriptionResult(
+      {
+        properties: {
+          original_duration_in_milliseconds: 60000,
+        },
+        transcripts: [
+          {
+            content_duration_in_milliseconds: 4200,
+            text: "提醒我明天买咖啡。",
+            sentences: [
+              {
+                begin_time: 12000,
+                end_time: 16200,
+                text: "提醒我明天买咖啡。",
+              },
+            ],
+          },
+        ],
+      },
+      "task-1",
+    );
+    const transcriptSha256 = "a".repeat(64);
+    const asr = buildAsrLedgerUsage(
+      {
+        transcript,
+        audit: {
+          provider: "bailian",
+          model: "paraformer-v2",
+          requestId: "task-1",
+        },
+      },
+      transcriptSha256,
+    );
+
+    assert.deepEqual(asr, {
+      provider: "bailian",
+      model: "paraformer-v2",
+      orderId: "task-1",
+      transcriptSha256,
+      originalDurationMs: 60000,
+      billableSpeechMs: 4200,
+      estimatedCostUsd: 0.00005,
+      billingUnitPriceUsdPerSecond: 0.000012,
+    });
+
+    const summary = summarizeMonthlyAsrUsage(
+      [
+        {
+          uid: "user-1",
+          record: {
+            idempotencyKey: "looki:conversation:moment-1:start",
+            target: "conversation",
+            status: "imported",
+            looki: {
+              momentId: "moment-1",
+              startTime: "2026-05-04T11:03:49.746Z",
+              endTime: "2026-05-04T11:25:13.148Z",
+            },
+            asr,
+            createdAt: "2026-05-05T05:34:21.248Z",
+            updatedAt: "2026-05-05T05:34:21.248Z",
+          },
+        },
+      ],
+      "2026-05",
+    );
+
+    assert.deepEqual(summary, {
+      month: "2026-05",
+      asrRunCount: 1,
+      originalDurationMs: 60000,
+      billableSpeechMs: 4200,
+      estimatedCostUsd: 0.00005,
+    });
   });
 });
 
@@ -335,7 +462,10 @@ describe("memory payload boundaries", () => {
       ),
       true,
     );
-    assert.equal(contentLooksNarrativeSummary("用户喜欢和家人一起骑行。"), false);
+    assert.equal(
+      contentLooksNarrativeSummary("用户喜欢和家人一起骑行。"),
+      false,
+    );
   });
 });
 
