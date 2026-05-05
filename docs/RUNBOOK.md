@@ -128,6 +128,7 @@ Write memory through `POST /v2/integrations/{app_id}/user/memories`:
 
 ```json
 {
+  "text": "用户重视陪孩子参与户外活动。",
   "text_source": "other",
   "text_source_spec": "Looki selected memory candidate",
   "memories": [
@@ -139,7 +140,7 @@ Write memory through `POST /v2/integrations/{app_id}/user/memories`:
 }
 ```
 
-Do not include date or source prose in the memory body. Do not send `contextSummary` as top-level `text` when using explicit `memories[]`; that would turn local/ledger context into a second extraction source. Keep `headline`, `context_summary`, evidence depth, provider audit, and source moment ids in the candidate and ledger layer.
+Do not include date or source prose in the memory body. The Omi Integration API requires top-level `text`, but it should be the same short memory content, not `contextSummary`; otherwise local/ledger context can become a second extraction source. Keep `headline`, `context_summary`, evidence depth, provider audit, and source moment ids in the candidate and ledger layer.
 
 ### Step 4: Optional Local Enrichment
 

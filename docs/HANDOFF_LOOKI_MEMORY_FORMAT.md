@@ -128,6 +128,7 @@ The App Integration API request should use explicit memory objects only:
 
 ```json
 {
+  "text": "用户重视陪孩子参与户外活动。",
   "text_source": "other",
   "text_source_spec": "Looki selected memory candidate",
   "memories": [
@@ -141,8 +142,9 @@ The App Integration API request should use explicit memory objects only:
 
 Do not include `contextSummary` as top-level `text` when writing explicit
 memories. It is local/ledger context, not a second cloud memory extraction
-source. Keep the top-level `text_source` fields generic so Omi accepts the
-explicit import without turning the rich context into another extraction input.
+source. The current Omi Integration API still requires `text`, so set `text`
+to the same short memory content and keep the top-level `text_source` fields
+generic.
 
 Developer API alternative:
 

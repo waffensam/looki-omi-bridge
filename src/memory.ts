@@ -132,6 +132,7 @@ export function buildOmiIntegrationMemoryImportPayload(
   }
 
   return {
+    text: candidate.content.trim(),
     text_source: "other",
     text_source_spec: "Looki selected memory candidate",
     memories: [

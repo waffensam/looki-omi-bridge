@@ -112,6 +112,7 @@ export interface OmiMemoryCreatePayload {
 }
 
 export interface OmiIntegrationMemoryImportPayload {
+  text: string;
   text_source: "other";
   text_source_spec: string;
   memories: Array<{

@@ -136,10 +136,11 @@ The durable core payload is `schemas/omi-memory-create.schema.json`:
 }
 ```
 
-For this Omi App bridge, the hosted app-compatible write path is `POST /v2/integrations/{app_id}/user/memories?uid={user_id}` with explicit `memories[]` objects. Send only `content` and generated tags in each memory object; do not send `contextSummary` as top-level `text`.
+For this Omi App bridge, the hosted app-compatible write path is `POST /v2/integrations/{app_id}/user/memories?uid={user_id}` with explicit `memories[]` objects. Send only `content` and generated tags in each memory object; do not send `contextSummary` as top-level `text`. The current Omi Integration API requires `text`, so set it to the same short memory content.
 
 ```json
 {
+  "text": "用户重视陪孩子参与户外活动。",
   "text_source": "other",
   "text_source_spec": "Looki selected memory candidate",
   "memories": [

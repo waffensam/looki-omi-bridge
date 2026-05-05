@@ -296,6 +296,7 @@ describe("memory payload boundaries", () => {
     );
 
     assert.deepEqual(payload, {
+      text: "用户重视陪孩子参与户外活动。",
       text_source: "other",
       text_source_spec: "Looki selected memory candidate",
       memories: [
