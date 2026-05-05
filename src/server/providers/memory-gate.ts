@@ -6,6 +6,33 @@ import { sha256 } from "../hash";
 import { memoryIdempotencyKey } from "../idempotency";
 import type { MemoryGateProvider, MemoryGateResult } from "./types";
 
+const MEMORY_GATE_INSTRUCTIONS = `
+You convert selected Looki sources into Omi memory candidates.
+
+Match Omi native memory style:
+- The memory content must be a timeless, reusable fact about the user, their preferences, habits, relationships, stable context, or a durable personal milestone.
+- Maximum 15 English words. For Chinese, use one short direct sentence, ideally <= 35 Chinese characters and never more than 70 characters.
+- Start user-related memories with "用户" unless a reliable user name is explicitly present.
+- Do not write diary/event summaries. Never describe a sequence such as leaving home, arriving, doing an activity, then returning.
+- Do not include dates, weekdays, "today", "this day", source names, Looki/Omi provenance, evidence wording, or advice in content.
+- Do not copy For You's poetic or emotional wording. Use For You only as evidence for a stable fact.
+- Ordinary meals, commuting, scrolling, chores, and one-off low-signal outings should be stage_only or never_write unless they reveal a stable preference, habit, relationship, commitment, or milestone.
+- If the source only proves that an event happened once, prefer stage_only.
+- Compare existingMemoryContents carefully. Do not auto_write an identical or semantically redundant memory.
+
+Good content examples:
+- "用户重视陪孩子参与户外活动。"
+- "用户喜欢和家人一起骑行。"
+- "用户会用语音指令设置生活提醒。"
+
+Bad content examples:
+- "一次从公寓出发的骑行之旅，沿街到公园后返回。"
+- "今天用户和孩子度过了温馨的一天。"
+- "Looki 显示用户下午去了公园。"
+
+Return strict JSON only.
+`.trim();
+
 export class ManagedMemoryGateProvider implements MemoryGateProvider {
   async buildCandidate(
     moment: LookiMoment,
@@ -33,8 +60,7 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
       },
       body: JSON.stringify({
         model: config.llmModel,
-        instructions:
-          "You convert selected Looki sources into Omi memory candidates. The primary source may be a Looki moment or a Looki For You item represented as moment metadata. For You items are Looki-processed summaries from original media and may add useful details, but do not copy poetic language, advice, dates, or source wording into the memory body. Treat selected For You context as evidence only when it supports a durable, reusable memory. Keep dates and provenance out of content. Return strict JSON.",
+        instructions: MEMORY_GATE_INSTRUCTIONS,
         input: JSON.stringify({
           moment: {
             id: moment.id,
@@ -77,7 +103,11 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
                 "contextSummary",
               ],
               properties: {
-                content: { type: "string" },
+                content: {
+                  type: "string",
+                  description:
+                    "One concise Omi-style timeless memory fact. Not a diary or event summary.",
+                },
                 eventType: { type: "string" },
                 confidence: { type: "number" },
                 writePolicy: {
@@ -189,8 +219,11 @@ function buildHeuristicCandidate(
   const forYouText = primaryForYou
     ? primaryForYou.description || primaryForYou.content || primaryForYou.title
     : "";
-  const content = forYouText || description || moment.title;
   const eventType = inferEventType(
+    `${moment.title} ${description || ""} ${forYouText}`,
+  );
+  const content = buildHeuristicMemoryContent(
+    eventType,
     `${moment.title} ${description || ""} ${forYouText}`,
   );
   const candidate: LookiMemoryCandidate = {
@@ -208,10 +241,10 @@ function buildHeuristicCandidate(
       ? { forYouItemIds: forYouHints.map((item) => item.id) }
       : {}),
     eventType,
-    confidence: forYouHints.length > 0 ? 0.78 : 0.86,
+    confidence: forYouHints.length > 0 ? 0.74 : 0.72,
     evidenceDepth:
       forYouHints.length > 0 ? "for_you_enriched_summary" : "moment_summary",
-    writePolicy: forYouHints.length > 0 ? "stage_only" : "auto_write",
+    writePolicy: "stage_only",
     visibility: "private",
     tags: forYouHints.length > 0 ? [eventType, "looki_for_you"] : [eventType],
     headline: moment.title.slice(0, 40),
@@ -252,6 +285,22 @@ function inferEventType(text: string): string {
   if (/买|购买|下单|维修|调试/.test(text)) return "important_purchase";
   if (/医院|体检|医生|健康/.test(text)) return "health_event";
   return "looki_moment";
+}
+
+function buildHeuristicMemoryContent(eventType: string, text: string): string {
+  if (eventType === "family_milestone") {
+    if (/自行车|骑行|单车/.test(text)) return "用户喜欢和家人一起骑行。";
+    if (/孩子|亲子/.test(text)) return "用户重视陪孩子参与日常活动。";
+    return "用户重视和家人的日常陪伴。";
+  }
+  if (eventType === "work_decision") return "用户会记录工作中的关键决定。";
+  if (eventType === "important_purchase") return "用户会认真比较重要购买选择。";
+  if (eventType === "health_event") return "用户会关注个人健康事项。";
+  if (/提醒|备忘|语音指令/.test(text)) return "用户会用语音指令设置生活提醒。";
+  if (/咖啡|味道|风味|童年/.test(text)) {
+    return "用户容易被熟悉味道唤起童年记忆。";
+  }
+  return "用户有一条待确认的日常记忆。";
 }
 
 function extractOutputText(payload: {

@@ -2,7 +2,7 @@ import type {
   LookiMemoryCandidate,
   NormalizedTranscript,
 } from "@/src/contracts.js";
-import { buildMemoryTags } from "@/src/memory";
+import { buildOmiIntegrationMemoryImportPayload } from "@/src/memory";
 import { getOmiIntegrationConfig } from "./config";
 import { fetchWithTimeout, readTimeoutMs } from "./fetch-timeout";
 import { joinUrl } from "./url";
@@ -47,14 +47,7 @@ export class OmiIntegrationClient {
     await this.post(
       `/v2/integrations/${encodeURIComponent(this.appId)}/user/memories`,
       uid,
-      {
-        memories: [
-          {
-            content: candidate.content,
-            tags: buildMemoryTags(candidate),
-          },
-        ],
-      },
+      buildOmiIntegrationMemoryImportPayload(candidate),
     );
 
     const memories = await this.get<IntegrationMemoriesResponse>(
@@ -126,7 +119,7 @@ export class OmiIntegrationClient {
     );
     if (!response.ok) {
       throw new Error(
-        `Omi integration request failed with HTTP ${response.status}`,
+        `Omi integration request failed with HTTP ${response.status}${await responseDetail(response)}`,
       );
     }
   }
@@ -153,7 +146,7 @@ export class OmiIntegrationClient {
     );
     if (!response.ok) {
       throw new Error(
-        `Omi integration read failed with HTTP ${response.status}`,
+        `Omi integration read failed with HTTP ${response.status}${await responseDetail(response)}`,
       );
     }
     return (await response.json()) as T;
@@ -164,4 +157,19 @@ export class OmiIntegrationClient {
     url.searchParams.set("uid", uid);
     return url;
   }
+}
+
+async function responseDetail(response: Response): Promise<string> {
+  const text = await response.text().catch(() => "");
+  const sanitized = sanitizeResponseText(text);
+  return sanitized ? `: ${sanitized}` : "";
+}
+
+function sanitizeResponseText(text: string): string {
+  return text
+    .replace(/sk-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/lk-[A-Za-z0-9_-]+/g, "[redacted]")
+    .replace(/x-looki-token=[^"&\s]+/g, "x-looki-token=[redacted]")
+    .slice(0, 600)
+    .trim();
 }

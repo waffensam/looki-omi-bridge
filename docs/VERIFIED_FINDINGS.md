@@ -146,7 +146,7 @@ Targeted XFYun ASR was useful as supporting evidence, but not sufficient by itse
 The resulting memory content should be date-free:
 
 ```text
-用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。
+用户重视陪孩子参与户外活动。
 ```
 
 Use tags and ledger metadata for the date and provenance:
@@ -171,7 +171,7 @@ d2182083-bd85-4249-a927-709d9ae9a370
 Core memory content after correction:
 
 ```text
-用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。
+用户重视陪孩子参与户外活动。
 ```
 
 The memory body was corrected to remove date/provenance from the content itself. The date belongs in tags and ledger fields, not the memory sentence.

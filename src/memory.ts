@@ -2,11 +2,26 @@ import type {
   LookiMemoryCandidate,
   MemoryEvidenceDepth,
   MemoryWritePolicy,
+  OmiIntegrationMemoryImportPayload,
   OmiMemoryCreatePayload,
   OmiMemoryEnrichment,
 } from "./contracts.js";
 
 const ISO_DATE_PREFIX = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}[，,\s:：-]+/;
+const CJK_RE = /[\u3400-\u9fff]/g;
+const NARRATIVE_MEMORY_MARKERS = [
+  /^一次/,
+  /这一天/,
+  /这天/,
+  /当天/,
+  /期间/,
+  /随后/,
+  /之后/,
+  /结束后/,
+  /完成后/,
+  /从.+出发/,
+  /返回.+后/,
+];
 const VALID_EVIDENCE_DEPTHS: MemoryEvidenceDepth[] = [
   "moment_summary",
   "for_you_enriched_summary",
@@ -35,6 +50,17 @@ export function contentLooksDatePrefixed(content: string): boolean {
   return ISO_DATE_PREFIX.test(content.trim());
 }
 
+export function contentLooksNarrativeSummary(content: string): boolean {
+  const trimmed = content.trim();
+  const cjkChars = trimmed.match(CJK_RE)?.length || 0;
+  const words = trimmed.split(/\s+/).filter(Boolean).length;
+  const isLong = cjkChars > 60 || words > 18;
+  const markerHits = NARRATIVE_MEMORY_MARKERS.filter((pattern) =>
+    pattern.test(trimmed),
+  ).length;
+  return isLong || markerHits >= 2 || (markerHits >= 1 && cjkChars > 36);
+}
+
 export function validateMemoryCandidate(
   candidate: LookiMemoryCandidate,
 ): string[] {
@@ -53,6 +79,14 @@ export function validateMemoryCandidate(
   }
   if (candidate.writePolicy === "auto_write" && candidate.confidence < 0.85) {
     errors.push("auto_write requires confidence >= 0.85");
+  }
+  if (
+    candidate.writePolicy === "auto_write" &&
+    contentLooksNarrativeSummary(candidate.content)
+  ) {
+    errors.push(
+      "auto_write memory content must be a concise Omi-style timeless fact, not an event summary",
+    );
   }
   if (!VALID_EVIDENCE_DEPTHS.includes(candidate.evidenceDepth)) {
     errors.push("evidenceDepth is invalid");
@@ -86,6 +120,26 @@ export function buildOmiMemoryCreatePayload(
     visibility: candidate.visibility,
     category: "manual",
     tags: buildMemoryTags(candidate),
+  };
+}
+
+export function buildOmiIntegrationMemoryImportPayload(
+  candidate: LookiMemoryCandidate,
+): OmiIntegrationMemoryImportPayload {
+  const errors = validateMemoryCandidate(candidate);
+  if (errors.length > 0) {
+    throw new Error(`Invalid memory candidate: ${errors.join("; ")}`);
+  }
+
+  return {
+    text_source: "other",
+    text_source_spec: "Looki selected memory candidate",
+    memories: [
+      {
+        content: candidate.content.trim(),
+        tags: buildMemoryTags(candidate),
+      },
+    ],
   };
 }
 

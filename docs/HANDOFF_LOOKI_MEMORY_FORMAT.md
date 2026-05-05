@@ -72,7 +72,7 @@ Build this internal candidate before writing anything:
 ```json
 {
   "idempotencyKey": "looki:memory:2026-05-03:family_milestone:4434298e-126b-44ca-9a75-f2fd9e5722fa",
-  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+  "content": "用户重视陪孩子参与户外活动。",
   "eventDate": "2026-05-03",
   "sourceKind": "multimodal_cluster",
   "sourceMomentIds": [
@@ -108,6 +108,7 @@ Build this internal candidate before writing anything:
 Rules:
 
 - `content` must be date-free and source-free.
+- `content` should match Omi native memory style: short, timeless, direct, and about a durable fact/preference/habit/relationship. Do not write event summaries.
 - Do not start content with `2026-05-03` or `Looki 显示`.
 - Put date in `eventDate`, tags, and ledger fields.
 - `confidence` is `0.0` to `1.0`.
@@ -127,9 +128,11 @@ The App Integration API request should use explicit memory objects only:
 
 ```json
 {
+  "text_source": "other",
+  "text_source_spec": "Looki selected memory candidate",
   "memories": [
     {
-      "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+      "content": "用户重视陪孩子参与户外活动。",
       "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
     }
   ]
@@ -138,7 +141,8 @@ The App Integration API request should use explicit memory objects only:
 
 Do not include `contextSummary` as top-level `text` when writing explicit
 memories. It is local/ledger context, not a second cloud memory extraction
-source.
+source. Keep the top-level `text_source` fields generic so Omi accepts the
+explicit import without turning the rich context into another extraction input.
 
 Developer API alternative:
 
@@ -158,7 +162,7 @@ If using the Developer API, write only:
 
 ```json
 {
-  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+  "content": "用户重视陪孩子参与户外活动。",
   "visibility": "private",
   "category": "manual",
   "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
@@ -228,7 +232,7 @@ Every write attempt should produce or update one ledger record:
     "mediaTypes": ["VIDEO", "AUDIO"]
   },
   "memory": {
-    "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+    "content": "用户重视陪孩子参与户外活动。",
     "writePolicy": "auto_write",
     "evidenceDepth": "targeted_media",
     "confidence": 0.92,

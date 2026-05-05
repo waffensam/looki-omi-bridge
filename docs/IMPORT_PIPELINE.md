@@ -191,10 +191,14 @@ Write core memory data through the Omi Integration API first.
 
 ```json
 {
-  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
-  "visibility": "private",
-  "category": "manual",
-  "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
+  "text_source": "other",
+  "text_source_spec": "Looki selected memory candidate",
+  "memories": [
+    {
+      "content": "用户重视陪孩子参与户外活动。",
+      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
+    }
+  ]
 }
 ```
 

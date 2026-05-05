@@ -128,9 +128,11 @@ Write memory through `POST /v2/integrations/{app_id}/user/memories`:
 
 ```json
 {
+  "text_source": "other",
+  "text_source_spec": "Looki selected memory candidate",
   "memories": [
     {
-      "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+      "content": "用户重视陪孩子参与户外活动。",
       "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
     }
   ]

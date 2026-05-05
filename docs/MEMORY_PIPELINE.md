@@ -33,7 +33,7 @@ Example:
 ```json
 {
   "idempotencyKey": "looki:memory:2026-05-03:family_milestone:4434298e-126b-44ca-9a75-f2fd9e5722fa",
-  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+  "content": "用户重视陪孩子参与户外活动。",
   "eventDate": "2026-05-03",
   "sourceKind": "multimodal_cluster",
   "sourceMomentIds": [
@@ -69,6 +69,13 @@ The memory body is intentionally date-free. Date belongs in:
 - `eventDate`
 - ledger `looki.startTime`
 - tags such as `looki_2026_05_03`
+
+The memory body should also match Omi's native memory style:
+
+- short, direct, and timeless
+- about a durable fact, preference, habit, relationship, or meaningful personal context
+- not a diary summary of what happened during a Looki moment
+- no dates, weekdays, source names, or poetic For You wording
 
 ## Value Gate
 
@@ -122,7 +129,7 @@ The durable core payload is `schemas/omi-memory-create.schema.json`:
 
 ```json
 {
-  "content": "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+  "content": "用户重视陪孩子参与户外活动。",
   "visibility": "private",
   "category": "manual",
   "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
@@ -130,6 +137,19 @@ The durable core payload is `schemas/omi-memory-create.schema.json`:
 ```
 
 For this Omi App bridge, the hosted app-compatible write path is `POST /v2/integrations/{app_id}/user/memories?uid={user_id}` with explicit `memories[]` objects. Send only `content` and generated tags in each memory object; do not send `contextSummary` as top-level `text`.
+
+```json
+{
+  "text_source": "other",
+  "text_source_spec": "Looki selected memory candidate",
+  "memories": [
+    {
+      "content": "用户重视陪孩子参与户外活动。",
+      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
+    }
+  ]
+}
+```
 
 If the bridge is running under a configured Omi Developer API key, use:
 

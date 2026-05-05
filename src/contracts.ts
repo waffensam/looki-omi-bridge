@@ -111,6 +111,15 @@ export interface OmiMemoryCreatePayload {
   tags: string[];
 }
 
+export interface OmiIntegrationMemoryImportPayload {
+  text_source: "other";
+  text_source_spec: string;
+  memories: Array<{
+    content: string;
+    tags: string[];
+  }>;
+}
+
 export interface OmiMemoryEnrichment {
   confidence?: number;
   source?: "looki";

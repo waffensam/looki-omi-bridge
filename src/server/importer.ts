@@ -313,10 +313,16 @@ async function processForYouMemoryJob(
     job.record.looki.forYouItemId || job.record.looki.momentId;
   const eventDate =
     job.record.memory?.eventDate || job.record.looki.startTime.slice(0, 10);
+  let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] =
+    "memory";
+  let itemForFailure: SanitizedLookiForYouItem | undefined;
+  let candidateForFailure: LookiMemoryCandidate | undefined;
+  let providerForFailure: AppLedgerRecord["provider"] | undefined;
 
   try {
     await updateProgress(job, "processing", "memory_gate", "筛选 For You 记忆");
     const item = await loadForYouItemById(looki, eventDate, forYouItemId);
+    itemForFailure = item;
     const syntheticMoment = syntheticMomentFromForYou(item, eventDate);
     const ledger = await store.listLedger(uid);
     const existingMemoryContents = ledger
@@ -334,6 +340,7 @@ async function processForYouMemoryJob(
         },
       ],
     );
+    providerForFailure = { memoryGate: audit };
     const candidate: LookiMemoryCandidate = {
       ...rawCandidate,
       idempotencyKey: memoryIdempotencyKey(
@@ -348,6 +355,7 @@ async function processForYouMemoryJob(
       evidenceDepth: "for_you_enriched_summary",
       tags: uniqueStrings([...rawCandidate.tags, "looki_for_you"]),
     };
+    candidateForFailure = candidate;
 
     const existingCandidate = await store.findLedger(
       uid,
@@ -406,6 +414,7 @@ async function processForYouMemoryJob(
       };
     }
 
+    failureStage = "omi";
     await updateProgress(job, "processing", "memory_write", "写入 Omi memory");
     const omiId = await omi.createMemory(uid, candidate);
     await appendLedger(
@@ -429,9 +438,32 @@ async function processForYouMemoryJob(
       candidate,
     };
   } catch (error) {
+    const failureRecord =
+      itemForFailure && candidateForFailure
+        ? buildFailedLedger(
+            buildForYouMemoryLedger(
+              itemForFailure,
+              eventDate,
+              candidateForFailure,
+              "failed",
+              undefined,
+              job.record.createdAt,
+              job.record.idempotencyKey,
+            ),
+            failureStage,
+            error,
+            job.record.createdAt,
+          )
+        : buildFailedLedger(
+            job.record,
+            failureStage,
+            error,
+            job.record.createdAt,
+          );
     await appendLedger(
       uid,
-      buildFailedLedger(job.record, "memory", error, job.record.createdAt),
+      failureRecord,
+      providerForFailure,
     );
     return {
       momentId: forYouItemId,
@@ -452,6 +484,10 @@ async function processMemoryJob(
   const memoryGate = new ManagedMemoryGateProvider();
   const omi = new OmiIntegrationClient();
   const store = getStore();
+  let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] =
+    "memory";
+  let candidateForFailure: LookiMemoryCandidate | undefined;
+  let providerForFailure: AppLedgerRecord["provider"] | undefined;
 
   try {
     await updateProgress(job, "processing", "memory_gate", "筛选高价值记忆");
@@ -469,6 +505,8 @@ async function processMemoryJob(
       existingMemoryContents,
       forYouHints,
     );
+    candidateForFailure = candidate;
+    providerForFailure = { memoryGate: audit };
     const existingCandidate = await store.findLedger(
       uid,
       candidate.idempotencyKey,
@@ -524,6 +562,7 @@ async function processMemoryJob(
       };
     }
 
+    failureStage = "omi";
     await updateProgress(job, "processing", "memory_write", "写入 Omi memory");
     const omiId = await omi.createMemory(uid, candidate);
     await appendLedger(
@@ -546,9 +585,25 @@ async function processMemoryJob(
       candidate,
     };
   } catch (error) {
+    const failureRecord = candidateForFailure
+      ? buildFailedLedger(
+          buildMemoryLedger(
+            moment,
+            candidateForFailure,
+            "failed",
+            undefined,
+            job.record.createdAt,
+            job.record.idempotencyKey,
+          ),
+          failureStage,
+          error,
+          job.record.createdAt,
+        )
+      : buildFailedLedger(job.record, failureStage, error, job.record.createdAt);
     await appendLedger(
       uid,
-      buildFailedLedger(job.record, "memory", error, job.record.createdAt),
+      failureRecord,
+      providerForFailure,
     );
     return {
       momentId: moment.id,

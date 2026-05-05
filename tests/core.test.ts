@@ -11,7 +11,11 @@ import {
   attachForYouHintsToMoments,
   sanitizeForYouItem,
 } from "@/src/looki-for-you";
-import { buildOmiMemoryCreatePayload } from "@/src/memory";
+import {
+  buildOmiIntegrationMemoryImportPayload,
+  buildOmiMemoryCreatePayload,
+  contentLooksNarrativeSummary,
+} from "@/src/memory";
 import {
   conversationIdempotencyKey,
   memoryIdempotencyKey,
@@ -275,8 +279,7 @@ describe("memory payload boundaries", () => {
     const raw = JSON.stringify(payload);
 
     assert.deepEqual(payload, {
-      content:
-        "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+      content: "用户重视陪孩子参与户外活动。",
       visibility: "private",
       category: "manual",
       tags: ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"],
@@ -285,6 +288,38 @@ describe("memory payload boundaries", () => {
     assert.equal(raw.includes("headline"), false);
     assert.equal(raw.includes("sourceMomentIds"), false);
     assert.equal(raw.includes("confidence"), false);
+  });
+
+  it("wraps explicit memories for the Omi Integration import API", () => {
+    const payload = buildOmiIntegrationMemoryImportPayload(
+      testMemoryCandidate(),
+    );
+
+    assert.deepEqual(payload, {
+      text_source: "other",
+      text_source_spec: "Looki selected memory candidate",
+      memories: [
+        {
+          content: "用户重视陪孩子参与户外活动。",
+          tags: [
+            "looki",
+            "looki_daily",
+            "looki_2026_05_03",
+            "family_milestone",
+          ],
+        },
+      ],
+    });
+  });
+
+  it("detects verbose event summaries that do not match Omi memory style", () => {
+    assert.equal(
+      contentLooksNarrativeSummary(
+        "一次从公寓出发的电梯下楼后骑行之旅，沿街骑行至公园，在绿地中享受休闲时光。期间与孩子进行了亲切互动，结束后返回公寓。",
+      ),
+      true,
+    );
+    assert.equal(contentLooksNarrativeSummary("用户喜欢和家人一起骑行。"), false);
   });
 });
 
@@ -363,8 +398,7 @@ function testMemoryCandidate(): LookiMemoryCandidate {
   return {
     idempotencyKey:
       "looki:memory:2026-05-03:family_milestone:4434298e-126b-44ca-9a75-f2fd9e5722fa",
-    content:
-      "用户陪孩子在迪卡侬挑选并调试过儿童自行车，并一起完成了离店骑行和夜间试骑。",
+    content: "用户重视陪孩子参与户外活动。",
     eventDate: "2026-05-03",
     sourceKind: "multimodal_cluster",
     sourceMomentIds: [
