@@ -2,10 +2,16 @@
 
 ## Default Daily Run
 
-The daily run has two possible lanes:
+The daily run has two explicit lanes:
 
 - conversation lane: imports selected Looki manual audio moments into Omi conversations
 - memory lane: writes high-value Looki daily/multimodal events into Omi memories
+
+Looki For You is never imported as a conversation. In the conversation lane it
+is only an optional user-facing description that helps identify relevant audio.
+In the memory lane, For You and moments are separate selectable sources. The UI
+does not force cross-matching between them; selected For You items can be passed
+as LLM context for memory generation.
 
 ```text
 date = yesterday in user's Looki timezone
@@ -56,13 +62,22 @@ For the conversation lane, fetch Looki moments for the target date and select:
 media_types contains AUDIO
 ```
 
+Read sanitized For You items for the same date. If a For You `MOMENT_POST`
+strongly describes an audio moment, show it as a UI note only. Do not use For
+You text as conversation content; conversation content still comes from raw
+audio ASR.
+
 Each candidate gets:
 
 ```text
 idempotency_key = looki:conversation:{moment_id}:{start_time}
 ```
 
-For the memory lane, build event clusters from daily timeline, targeted media, OCR, and ASR evidence:
+For the memory lane, selectable source ids can be either `moment:{id}` or
+`for_you:{id}`. Moment jobs start from moment title/description. For You jobs
+start from sanitized For You content. If the user selects both, selected For You
+ids are stored in the queued moment job as LLM context rather than inferred by
+hidden matching.
 
 ```text
 idempotency_key = looki:memory:{event_date}:{event_type}:{stable_source_id}

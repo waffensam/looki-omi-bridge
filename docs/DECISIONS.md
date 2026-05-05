@@ -90,11 +90,14 @@ Status: accepted
 
 The first memory lane can auto-write high-confidence Omi memories from Looki moment title/description when the event is concrete, durable, non-routine, and non-speculative.
 
-Targeted media analysis is not required for every auto-write. It is required only when the moment summary is promising but ambiguous, when the event meaning depends on visual context, or when a second evidence source could materially change the write decision.
+For You items are allowed as Looki-processed memory sources and as optional audio-review notes. They can explain why an audio moment matters and supply details for memory candidate generation. The UI should not force every For You item onto a moment; in the memory lane, For You and moments are separate selectable sources. They are not imported as conversations and should not be copied verbatim into memory content.
+
+Targeted media analysis is not required for the first memory lane. Omi memory is a lightweight core record, so the bridge should use moment title/description plus sanitized For You content before considering any original media deep dive.
 
 The memory gate must record evidence depth so later review can distinguish a memory created from Looki summary metadata from one created after deeper media analysis:
 
 - `moment_summary`
+- `for_you_enriched_summary`
 - `targeted_media_required`
 - `targeted_media`
 - `user_review`

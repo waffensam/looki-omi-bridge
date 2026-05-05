@@ -14,12 +14,15 @@ It does not replace the conversation import lane. The two lanes share Looki disc
 Memory candidates can come from:
 
 - Looki daily timeline titles and descriptions
-- targeted video/key-frame analysis
-- OCR evidence
-- ASR evidence from relevant clips
+- sanitized For You items selected by the user
+- selected moment candidates, optionally with selected For You items as LLM context
 - user confirmation
 
-Do not deep-analyze the whole day by default. Pick high-value clusters first.
+Do not deep-analyze original media for the memory lane by default. Omi memory is
+a lightweight core record, so the bridge uses moment title/description for the
+first pass and For You as Looki's already-processed enrichment layer. The UI
+does not need to display semantic clustering; memory synthesis happens inside
+the LLM gate.
 
 ## Candidate Shape
 
@@ -74,6 +77,7 @@ The first implementation may auto-write from a strong Looki moment summary. It d
 Record the evidence depth:
 
 - `moment_summary`: title/description/time range are strong enough to write
+- `for_you_enriched_summary`: selected For You content, alone or as context for a selected moment, is strong enough to write
 - `targeted_media_required`: promising but ambiguous; do not write until media is inspected
 - `targeted_media`: targeted media/key-frame/OCR/ASR was inspected
 - `user_review`: user confirmed or corrected the candidate
@@ -84,11 +88,14 @@ Use `auto_write` only when all are true:
 
 - confidence is at least `0.85`
 - memory is reusable beyond the day it happened
-- evidence includes a strong Looki moment summary, visual, ASR, OCR, or user-review reason
+- evidence includes a strong Looki moment summary, For You enrichment, visual, ASR, OCR, or user-review reason
 - it is not already represented in Omi memories
-- evidence depth is `moment_summary`, `targeted_media`, or `user_review`
+- evidence depth is `moment_summary`, `for_you_enriched_summary`, `targeted_media`, or `user_review`
 
-Use `moment_summary` auto-write only when the Looki title/description is concrete, durable, non-routine, and non-speculative.
+Use `moment_summary` or `for_you_enriched_summary` auto-write only when the
+resulting memory sentence is concrete, durable, non-routine, and
+non-speculative. For You content can supply details, but the cloud memory body
+must still be a short date-free fact, not Looki's original prose.
 
 ### Stage Only
 
@@ -148,7 +155,8 @@ Omi Desktop can display:
 Current backend memory models do not preserve all rich fields across devices. Until that is fixed:
 
 - backend is authoritative for core memory
-- local SQLite enrichment is optional and cache-only
+- local SQLite enrichment is optional, cache-only, and only possible from a local helper/native app that has explicit access to the user's Omi data directory
+- the hosted Omi App bridge cannot safely write the user's local Omi SQLite database
 - ledger must record `richMetadataSynced=false` and `sqliteCacheOnly=true`
 
 Do not use local enrichment as the only write path.

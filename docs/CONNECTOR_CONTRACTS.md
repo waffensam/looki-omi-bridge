@@ -15,11 +15,12 @@ Source of truth: `looki-memory` skill at `/Users/snode/.codex/skills/looki-memor
 Conversation lane:
 
 - array of `LookiAudioMoment`
+- sanitized For You hints for display only
 
 Memory lane:
 
 - array of `LookiTimelineEvent`
-- targeted media artifacts for selected timeline clusters
+- sanitized For You items as independent Looki-processed memory sources
 
 ### Endpoint Shape
 
@@ -43,16 +44,25 @@ GET {base_url}/moments/{moment_id}
 GET {base_url}/moments/{moment_id}/files?highlight=true&limit=20
 GET {base_url}/moments/{moment_id}/files?limit=100&cursor_id=...
 GET {base_url}/moments/search?query=...&start_date=YYYY-MM-DD&end_date=YYYY-MM-DD
+GET {base_url}/for_you/items?group=all&recorded_from=YYYY-MM-DD&recorded_to=YYYY-MM-DD&order_by=recorded_at&limit=100
 ```
 
 `FileModel.temporary_url` expires in one hour. Fetch media only after a candidate is selected, and never persist signed URLs.
+
+For You `content` can contain markdown image links with signed URLs. Strip
+embedded URLs before returning the text to the UI, LLM providers, logs, or the
+ledger.
 
 ### Rules
 
 - Validate Looki base URL before using the API key.
 - Do not log API key.
 - Do not log temporary media URLs.
+- Treat the Looki API key as broad read access to the user's Looki archive. The UI should make this boundary clear and avoid implying that the bridge can only see the currently selected day.
+- Fetch detailed media only after explicit import selection; day listing may read moment and For You metadata for the selected date.
 - Preserve Looki moment id, title, description, start/end time, timezone, duration, and media size.
+- For You is not a conversation import target. Use it to annotate recordings and as a first-class selectable memory source.
+- Do not force every For You item onto a moment. Show For You and moments separately in the memory UI; pass selected For You items to the LLM gate as context when needed.
 - Respect Looki's 60 requests/minute API limit.
 
 ## XFYun ASR Adapter

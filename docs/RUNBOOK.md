@@ -86,12 +86,13 @@ GET /api/oauth/start -> 302 to Omi OAuth when OMI_APP_ID is configured
 ### Step 3: Private User Flow
 
 1. Enable the private app in Omi Developer Mode.
-2. Open the app home URL from Omi and confirm `uid` is present in the query string.
-3. Save Looki credentials for that `uid`.
-4. Recheck `setup-status`; it should return `true`.
-5. Import one memory-only moment.
-6. Import one audio conversation moment.
-7. Verify both in Omi and in this app's ledger.
+2. Open the app setup/auth link from Omi once and confirm the page either receives `uid` in the query string or restores a previously remembered UID.
+3. On macOS, the Open button may open the bare App Home URL. The bridge should restore the last remembered UID in the same browser; if no UID has been remembered yet, use the visible “从 Omi 授权连接” action or paste the UID manually.
+4. Save Looki credentials for that `uid`.
+5. Recheck `setup-status`; it should return `true`.
+6. Import one memory-only moment.
+7. Import one audio conversation moment.
+8. Verify both in Omi and in this app's ledger.
 
 ### Step 4: Error Handling
 

@@ -10,7 +10,8 @@ The first shipped surface is a manual Omi App flow:
 
 ```text
 open app from Omi
-  -> save Looki base_url/API key for the current Omi uid
+  -> capture or restore the current Omi uid
+  -> save Looki base_url/API key for that uid
   -> pick a date
   -> select moments
   -> import selected Memory and/or 录音会话
