@@ -13,10 +13,9 @@ export interface OmiOAuthConfig {
 
 export interface ManagedProviderConfig {
   mode: ProviderMode;
-  llmProvider: string;
-  llmModel: string;
-  openaiApiKey?: string;
   asrProvider: string;
+  asrMaxAudioDurationMs?: number;
+  asrMonthlyBillableLimitMs?: number;
   bailianApiKey?: string;
   bailianBaseUrl: string;
   bailianModel: string;
@@ -63,12 +62,15 @@ export function getManagedProviderConfig(): ManagedProviderConfig {
     process.env.BAILIAN_API_KEY || process.env.DASHSCOPE_API_KEY;
   return {
     mode,
-    llmProvider: process.env.LLM_PROVIDER || "managed",
-    llmModel: process.env.LLM_MODEL || "gpt-4.1-mini",
-    ...(process.env.MANAGED_OPENAI_API_KEY
-      ? { openaiApiKey: process.env.MANAGED_OPENAI_API_KEY }
-      : {}),
     asrProvider: process.env.ASR_PROVIDER || "bailian",
+    ...optionalMinutesToMs(
+      "asrMaxAudioDurationMs",
+      process.env.ASR_MAX_AUDIO_DURATION_MINUTES,
+    ),
+    ...optionalMinutesToMs(
+      "asrMonthlyBillableLimitMs",
+      process.env.ASR_MONTHLY_BILLABLE_LIMIT_MINUTES,
+    ),
     ...(bailianApiKey ? { bailianApiKey } : {}),
     bailianBaseUrl:
       process.env.BAILIAN_BASE_URL || "https://dashscope.aliyuncs.com",
@@ -102,4 +104,14 @@ function parseCsv(value: string): string[] {
     .split(",")
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function optionalMinutesToMs<K extends string>(
+  key: K,
+  value: string | undefined,
+): Partial<Record<K, number>> {
+  if (!value?.trim()) return {};
+  const minutes = Number(value);
+  if (!Number.isFinite(minutes) || minutes <= 0) return {};
+  return { [key]: Math.round(minutes * 60_000) } as Partial<Record<K, number>>;
 }

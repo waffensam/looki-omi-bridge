@@ -20,12 +20,14 @@ These rules apply when working inside `looki-omi-bridge/`.
 
 ## Import Policy
 
-- The default Omi import target is `POST /v1/dev/user/conversations/from-segments`.
-- The default Omi memory write target is `POST /v1/dev/user/memories` using a configured Developer API key with `memories:read` and `memories:write`. User-auth `/v3/memories` is acceptable for local smoke tests, but neither Python endpoint should be treated as preserving rich metadata.
-- Use `source: "unknown"` for imported Looki audio. Do not use `external_integration` unless the Omi backend is fixed to handle segmented external imports.
+- The public v1 product is an Omi App / External Integration app, so default writes must use the Omi Integration Import APIs, not Omi Developer API-only endpoints.
+- The default conversation import target is `POST /v2/integrations/{app_id}/user/conversations?uid={uid}` and the ledger method is `text_fallback`.
+- The default memory write target is `POST /v2/integrations/{app_id}/user/memories?uid={uid}` using text-only native Omi memory extraction.
+- Developer API-only capabilities such as `POST /v1/dev/user/conversations/from-segments`, Developer memory CRUD, and local SQLite enrichment are internal diagnostics or future/upstream-enhancement paths only. Do not make them part of the public v1 Omi App flow unless the user explicitly asks.
+- If the future segmented Developer API path is used, use `source: "unknown"` for imported Looki audio. Do not use `external_integration` unless the Omi backend is fixed to handle segmented external imports.
 - Preserve original Looki `started_at`, `finished_at`, and timezone.
 - Convert ASR speaker ids to Omi speaker labels such as `SPEAKER_00`.
-- Default `is_user` to `true` for manual self recordings unless the diarization result proves otherwise.
+- Default `is_user` to `true` for manual self recordings unless the diarization result proves otherwise. This currently affects only the internal/future segmented path because the public v1 Integration API accepts transcript text, not transcript segments.
 - Use an idempotency key based on Looki moment id plus start time, not on mutable title text.
 - For memory candidates, keep dates and provenance out of the memory body. Put date/source in ledger metadata and tags such as `looki_YYYY_MM_DD`.
 - Do not auto-write every daily event. Default low-confidence or ordinary routine items to `stage_only` or `never_write`.
@@ -38,7 +40,8 @@ These rules apply when working inside `looki-omi-bridge/`.
   - import ledger
   - dry-run mode
   - explicit retry/error states
-- Keep the core pipeline provider-agnostic. XFYun is the first ASR adapter, not a hard-coded global assumption.
+- Keep the core pipeline provider-agnostic. Bailian is the default ASR adapter, not a hard-coded global assumption.
+- Bailian Paraformer is the current default ASR adapter; keep XFYun as a fallback adapter only.
 - New commands must support dry-run and should not upload or write to Omi unless explicitly asked.
 - When adding code, include focused tests for normalization, idempotency, and payload generation.
 

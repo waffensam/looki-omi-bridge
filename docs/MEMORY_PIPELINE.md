@@ -6,8 +6,8 @@ The memory lane converts high-value Looki daily/multimodal evidence into Omi mem
 
 It does not replace the conversation import lane. The two lanes share Looki discovery, ASR, value gating, and the ledger, but they produce different Omi artifacts:
 
-- conversation lane: `POST /v1/dev/user/conversations/from-segments`
-- memory lane: Omi memory core write plus optional local rich metadata
+- conversation lane in public v1: `POST /v2/integrations/{app_id}/user/conversations`
+- memory lane in public v1: Omi Integration API native memory extraction plus ledger metadata
 
 ## Inputs
 
@@ -151,12 +151,11 @@ The bridge records source text hashes, previews, selected Looki ids, and import
 status in the ledger. Omi owns the final memory wording and may extract zero,
 one, or multiple memories from a selected source.
 
-If the bridge is running under a configured Omi Developer API key, use:
-
-- `memories:read`
-- `memories:write`
-
-Use `POST /v1/dev/user/memories` for single memory writes and `GET /v1/dev/user/memories` for dedupe reads. `headline` can remain on the `LookiMemoryCandidate` and local rich metadata, but is not part of either cloud core create payload. User-auth `/v3/memories` should be treated the same for bridge purposes because the current Python `MemoryDB.from_memory()` path does not preserve headline or rich context fields.
+Developer API memory CRUD is not part of the public Omi App v1 flow. If a local
+operator explicitly runs a Developer API-only diagnostic path, treat
+`POST /v1/dev/user/memories` as a core-field write surface and keep `headline`
+or rich metadata in the candidate/enrichment layer until backend persistence is
+confirmed.
 
 Read existing memories before writing so the bridge can keep/patch/skip instead of creating duplicates.
 

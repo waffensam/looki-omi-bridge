@@ -15,6 +15,21 @@ export interface MonthlyAsrUsageSummary {
   estimatedCostUsd: number;
 }
 
+export type AsrLimitDecision =
+  | { allowed: true }
+  | {
+      allowed: false;
+      reason: "audio_duration_exceeds_limit" | "monthly_asr_limit_reached";
+      message: string;
+    };
+
+export interface AsrLimitInput {
+  audioDurationMs?: number;
+  maxAudioDurationMs?: number;
+  monthlyBillableSpeechMs: number;
+  monthlyBillableLimitMs?: number;
+}
+
 export function buildAsrLedgerUsage(
   asrResult: AsrResult,
   transcriptSha256: string,
@@ -68,6 +83,33 @@ export function summarizeMonthlyAsrUsage(
   return summary;
 }
 
+export function evaluateAsrLimits(input: AsrLimitInput): AsrLimitDecision {
+  if (
+    typeof input.maxAudioDurationMs === "number" &&
+    typeof input.audioDurationMs === "number" &&
+    input.audioDurationMs > input.maxAudioDurationMs
+  ) {
+    return {
+      allowed: false,
+      reason: "audio_duration_exceeds_limit",
+      message: `audio_duration_exceeds_limit:${formatMinutes(input.audioDurationMs)}m>${formatMinutes(input.maxAudioDurationMs)}m`,
+    };
+  }
+
+  if (
+    typeof input.monthlyBillableLimitMs === "number" &&
+    input.monthlyBillableSpeechMs >= input.monthlyBillableLimitMs
+  ) {
+    return {
+      allowed: false,
+      reason: "monthly_asr_limit_reached",
+      message: `monthly_asr_limit_reached:${formatMinutes(input.monthlyBillableSpeechMs)}m>=${formatMinutes(input.monthlyBillableLimitMs)}m`,
+    };
+  }
+
+  return { allowed: true };
+}
+
 export function currentUsageMonth(now = new Date()): string {
   return now.toISOString().slice(0, 7);
 }
@@ -101,4 +143,8 @@ function isBailianProvider(provider: string): boolean {
 
 function roundUsd(value: number): number {
   return Math.round(value * 1_000_000) / 1_000_000;
+}
+
+function formatMinutes(ms: number): string {
+  return (ms / 60_000).toFixed(ms % 60_000 === 0 ? 0 : 1);
 }

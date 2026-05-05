@@ -87,12 +87,14 @@ Only after those are reliable should daily scheduling be added.
 ## Operational Defaults
 
 - target date: previous day
-- Omi source: `unknown`
-- Omi endpoint: `/v1/dev/user/conversations/from-segments`
-- Omi memory body: date-free content
-- ASR provider: XFYun
+- Omi conversation endpoint: `/v2/integrations/{app_id}/user/conversations`
+- Omi memory endpoint: `/v2/integrations/{app_id}/user/memories`
+- Omi write method: `text_fallback` for public v1 conversations
+- Omi memory source text: date-free where possible; date/provenance stays in ledger metadata
+- ASR provider: Bailian Paraformer
 - AI provider mode: managed
 - Looki media: `AUDIO` moments only
 - memory auto-write: allowed for high-confidence concrete Looki moment summaries
 - raw audio retention: temp only
 - duplicate protection: ledger required
+- Developer API-only segmented import: internal/future path, not public v1

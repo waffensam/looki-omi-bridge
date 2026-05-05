@@ -17,8 +17,8 @@ Build without network calls first.
 
 - ledger reader/writer
 - idempotency key generation
-- XFYun result parser using saved examples
-- Omi payload normalizer
+- Bailian result parser and XFYun fallback parser using saved examples
+- Omi Integration API payload normalizer
 - Omi memory payload builder
 - memory value gate with evidence depth
 - provider adapter interfaces and managed provider config shape
@@ -27,7 +27,7 @@ Build without network calls first.
 
 Acceptance:
 
-- saved XFYun result can produce a valid Omi payload
+- saved ASR result can produce a valid Omi Integration API payload
 - saved Looki daily event can produce a date-free Omi memory payload
 - strong saved Looki moment summary can produce an `auto_write` memory candidate with `evidenceDepth=moment_summary`
 - ambiguous saved Looki moment summary can produce `stage_only` with `evidenceDepth=targeted_media_required`
@@ -58,8 +58,8 @@ Acceptance:
 Add single-item real import.
 
 - temporary audio download
-- XFYun upload and polling
-- Omi from-segments import
+- Bailian upload/submission and polling
+- Omi Integration API conversation text import
 - Omi memory core write
 - `memory-write-one` and `memory-write-date` commands
 - ledger update
@@ -73,6 +73,7 @@ Acceptance:
 - Omi conversation id is recorded
 - Omi memory id is recorded
 - rerun skips the same candidate
+- Developer API-only segmented import remains outside public v1
 
 ## Phase 4: Daily Job
 

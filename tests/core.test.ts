@@ -23,6 +23,7 @@ import {
 } from "@/src/server/idempotency";
 import {
   buildAsrLedgerUsage,
+  evaluateAsrLimits,
   summarizeMonthlyAsrUsage,
 } from "@/src/server/asr-usage";
 import { normalizeBailianTranscriptionResult } from "@/src/server/providers/bailian-asr";
@@ -41,6 +42,35 @@ describe("joinUrl", () => {
     assert.equal(
       joinUrl("https://api.omi.me", "/v2/integrations/app").toString(),
       "https://api.omi.me/v2/integrations/app",
+    );
+  });
+});
+
+describe("ASR limit controls", () => {
+  it("blocks audio that would exceed configured ASR limits", () => {
+    assert.deepEqual(
+      evaluateAsrLimits({
+        audioDurationMs: 121 * 60_000,
+        maxAudioDurationMs: 120 * 60_000,
+        monthlyBillableSpeechMs: 0,
+      }),
+      {
+        allowed: false,
+        reason: "audio_duration_exceeds_limit",
+        message: "audio_duration_exceeds_limit:121m>120m",
+      },
+    );
+
+    assert.deepEqual(
+      evaluateAsrLimits({
+        monthlyBillableSpeechMs: 600 * 60_000,
+        monthlyBillableLimitMs: 600 * 60_000,
+      }),
+      {
+        allowed: false,
+        reason: "monthly_asr_limit_reached",
+        message: "monthly_asr_limit_reached:600m>=600m",
+      },
     );
   });
 });

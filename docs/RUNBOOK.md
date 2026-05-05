@@ -4,10 +4,13 @@
 
 1. Create `.env.local` from `config/.env.example`.
 2. Fill `OMI_APP_ID` and `OMI_APP_API_KEY` from the Omi App configuration.
-3. Fill XFYun credentials for first-version recording imports.
-4. `MANAGED_OPENAI_API_KEY` is optional. The hosted memory lane defaults to Omi native extraction; managed LLM adapters are reserved for future pre-filter/enrichment work.
+3. Fill Bailian/DashScope credentials for first-version recording imports.
+4. Keep `ASR_PROVIDER=bailian` unless intentionally testing the XFYun fallback adapter.
 5. For hosted runs, create the Supabase tables in `supabase/schema.sql`; local runs can use `data/app-store.json`.
 6. Save Looki `base_url` and API key in the app UI for each Omi uid.
+7. For production, set ASR cost controls before public visibility:
+   - `ASR_MAX_AUDIO_DURATION_MINUTES`
+   - `ASR_MONTHLY_BILLABLE_LIMIT_MINUTES`
 
 ## Manual Validation Sequence
 
@@ -38,7 +41,7 @@ Expected output:
 Run exactly one selected candidate through:
 
 ```text
-Looki -> XFYun -> normalize -> Omi Integration conversation import
+Looki -> Bailian ASR -> normalize -> Omi Integration conversation import
 ```
 
 Expected app behavior: the write call succeeds, then the app reads recent integration conversations and records the matched conversation id when available.
@@ -60,7 +63,7 @@ Read the imported conversation by Omi API and confirm:
 
 ## Omi App Private Test Sequence
 
-Use this before switching the Omi app from Private to Public.
+Use this before switching the Omi app from Private to Public. For v1, this is a single-owner test because only the product owner can perform real Omi/Looki verification before submission.
 
 ### Step 1: Configure App Fields
 
@@ -102,6 +105,7 @@ Check these cases before public submission:
 - invalid Looki key fails setup without printing the key
 - missing Omi or ASR env vars show status warnings
 - duplicate imports skip through ledger idempotency
+- an over-limit recording is skipped before ASR upload when production ASR limits are configured
 
 ## Memory Validation Sequence
 
@@ -163,7 +167,15 @@ Treat rich metadata as not synced unless the backend response returns the same f
 
 ## Failure Playbook
 
+### Bailian ASR Limit Reached
+
+If an audio import is skipped with `audio_duration_exceeds_limit` or
+`monthly_asr_limit_reached`, raise the relevant production limit only after
+checking the expected cost.
+
 ### XFYun `language verify fail`
+
+This applies only when intentionally using the fallback XFYun adapter.
 
 Use:
 

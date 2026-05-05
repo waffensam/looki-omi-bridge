@@ -14,7 +14,13 @@ import type {
   ImportTarget,
 } from "@/src/contracts.js";
 import { sanitizeForYouItem } from "@/src/looki-for-you";
-import { buildAsrLedgerUsage } from "./asr-usage";
+import {
+  buildAsrLedgerUsage,
+  currentUsageMonth,
+  evaluateAsrLimits,
+  summarizeMonthlyAsrUsage,
+} from "./asr-usage";
+import { getManagedProviderConfig } from "./config";
 import { findAudioFile } from "./looki-client";
 import { getLookiClientForUid } from "./looki-profile";
 import { OmiIntegrationClient } from "./omi-client";
@@ -467,6 +473,7 @@ async function processConversationJob(
   looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
 ): Promise<ImportResultItem> {
   const asr = createAsrProvider();
+  const providerConfig = getManagedProviderConfig();
   const omi = new OmiIntegrationClient();
   let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] = "looki";
   let completedAsrResult: AsrResult | null = null;
@@ -498,12 +505,34 @@ async function processConversationJob(
     }
 
     failureStage = "asr";
+    const durationMs = audioFile.file.duration_ms ?? undefined;
+    const limitDecision = await evaluateConversationAsrLimits(
+      uid,
+      providerConfig,
+      durationMs,
+    );
+    if (!limitDecision.allowed) {
+      await appendLedger(
+        uid,
+        buildSkippedConversationLedger(
+          job.record,
+          limitDecision.message,
+          job.record.createdAt,
+        ),
+      );
+      return {
+        momentId: moment.id,
+        target: "conversation",
+        status: "skipped",
+        reason: limitDecision.reason,
+      };
+    }
+
     let audio: ArrayBuffer | null = null;
     if (asr.inputMode === "audio") {
       await updateProgress(job, "processing", "audio_download", "下载临时音频");
       audio = await looki.downloadFile(audioFile.file.temporary_url);
     }
-    const durationMs = audioFile.file.duration_ms ?? undefined;
     try {
       const asrResult = await asr.transcribeAudio({
         ...(audio ? { audio } : {}),
@@ -591,6 +620,25 @@ async function processConversationJob(
         error instanceof Error ? error.message : "conversation import failed",
     };
   }
+}
+
+async function evaluateConversationAsrLimits(
+  uid: string,
+  providerConfig: ReturnType<typeof getManagedProviderConfig>,
+  audioDurationMs: number | undefined,
+) {
+  const ledger = await getStore().listLedger(uid);
+  const usage = summarizeMonthlyAsrUsage(ledger, currentUsageMonth());
+  return evaluateAsrLimits({
+    ...(typeof audioDurationMs === "number" ? { audioDurationMs } : {}),
+    ...(typeof providerConfig.asrMaxAudioDurationMs === "number"
+      ? { maxAudioDurationMs: providerConfig.asrMaxAudioDurationMs }
+      : {}),
+    monthlyBillableSpeechMs: usage.billableSpeechMs,
+    ...(typeof providerConfig.asrMonthlyBillableLimitMs === "number"
+      ? { monthlyBillableLimitMs: providerConfig.asrMonthlyBillableLimitMs }
+      : {}),
+  });
 }
 
 async function loadSelectedForYouHints(

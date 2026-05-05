@@ -50,8 +50,8 @@ GET {base_url}/for_you/items?group=all&recorded_from=YYYY-MM-DD&recorded_to=YYYY
 `FileModel.temporary_url` expires in one hour. Fetch media only after a candidate is selected, and never persist signed URLs.
 
 For You `content` can contain markdown image links with signed URLs. Strip
-embedded URLs before returning the text to the UI, LLM providers, logs, or the
-ledger.
+embedded URLs before returning the text to the UI, provider adapters, logs, or
+the ledger.
 
 ### Rules
 
@@ -62,10 +62,35 @@ ledger.
 - Fetch detailed media only after explicit import selection; day listing may read moment and For You metadata for the selected date.
 - Preserve Looki moment id, title, description, start/end time, timezone, duration, and media size.
 - For You is not a conversation import target. Use it to annotate recordings and as a first-class selectable memory source.
-- Do not force every For You item onto a moment. Show For You and moments separately in the memory UI; pass selected For You items to the LLM gate as context when needed.
+- Do not force every For You item onto a moment. Show For You and moments separately in the memory UI; pass selected For You items as Omi native memory source context when needed.
 - Respect Looki's 60 requests/minute API limit.
 
+## Bailian ASR Adapter
+
+### Provider
+
+Bailian/DashScope Paraformer recording-file recognition is the default managed
+ASR adapter.
+
+### Current Defaults
+
+- `model`: `paraformer-v2`
+- `language_hints`: `zh,en`
+- `diarization_enabled`: configurable, default off unless explicitly enabled
+- `timestamp_alignment_enabled`: configurable when supported by the adapter
+- `disfluency_removal_enabled`: configurable when supported by the adapter
+
+### Rules
+
+- Upload only user-selected Looki audio.
+- Prefer URL-based upload through provider-supported temporary object storage; do not persist signed Looki media URLs.
+- Record provider task id, model, output hash, original duration, billable speech duration, and estimated cost in the ledger.
+- Apply configured ASR duration/monthly limits before provider upload when possible.
+- Normalize sentence timestamps back onto the original media timeline.
+
 ## XFYun ASR Adapter
+
+XFYun is a fallback adapter, not the public v1 default.
 
 ### Provider
 
@@ -193,7 +218,7 @@ If future diarization identifies other people reliably, keep `isUser=false` for 
 
 ## AI Provider Registry
 
-The app must route LLM, ASR, OCR, and multimodal analysis through provider adapters.
+The app must route ASR, OCR, and multimodal analysis through provider adapters.
 
 ### Modes
 
@@ -201,12 +226,11 @@ The app must route LLM, ASR, OCR, and multimodal analysis through provider adapt
 - `user_key`: use a user-supplied provider key stored encrypted
 - `subscription`: use managed providers but attribute usage to the user's paid plan
 
-First version required mode: `managed`.
+First version required mode: `managed`. `user_key` and `subscription` are future pricing/account modes and must stay hidden from the public UI until implemented end to end.
 
 ### Required Adapter Classes
 
 - ASR adapter: audio file -> `NormalizedTranscript`
-- memory gate adapter: Looki moment evidence -> `LookiMemoryCandidate`
 - media analysis adapter: selected image/video evidence -> evidence summaries
 
 ### Rules
@@ -214,91 +238,88 @@ First version required mode: `managed`.
 - Do not let provider-specific fields leak into Omi payload contracts.
 - Do not store provider API keys in the ledger.
 - Record provider name, model, request/order id, and output hashes for audit.
-- Keep prompts and JSON schemas versioned so a memory decision can be explained later.
+- Keep JSON schemas versioned so a memory decision can be explained later. External memory rewriting/gating is not part of public v1.
 
 ## Omi Connector
 
-Source of truth: local upstream repo at `/Users/snode/Documents/omi-upstream`.
+Source of truth for public v1: Omi App Integration Import APIs.
 
-### Developer Key
+### Integration App Key
 
-The bridge should prefer a durable Omi Developer API key with only the scopes needed for the enabled lane.
+The bridge uses the Omi app's Integration API key and app id.
 
 Send it as:
 
 ```text
-Authorization: Bearer {OMI_DEV_API_KEY}
+Authorization: Bearer {OMI_APP_API_KEY}
 ```
 
-Conversation import lane:
+The user must have enabled the app, and the write call must include the Omi `uid`.
 
-- `conversations:read`
-- `conversations:write`
-
-Memory lane:
-
-- `memories:read`
-- `memories:write`
-
-Do not create a new key for every run. Key creation is a setup action, not a daily pipeline step.
-
-### Import Endpoint
+### Conversation Import Endpoint
 
 ```text
-POST /v1/dev/user/conversations/from-segments
+POST /v2/integrations/{app_id}/user/conversations?uid={uid}
+GET /v2/integrations/{app_id}/conversations?uid={uid}
 ```
 
-Verification endpoints:
+Payload rules:
 
-```text
-GET /v1/dev/user/conversations?include_transcript=true&start_date=...&end_date=...
-GET /v1/dev/user/conversations/{conversation_id}?include_transcript=true
-```
-
-### Payload Rules
-
-- Always use `source: "unknown"` for this bridge.
-- Do not use `source: "external_integration"` until Omi backend supports segmented external integration imports.
+- Send transcript `text`, original `started_at`, original `finished_at`, `text_source=audio_transcript`, and a Looki-specific `text_source_spec`.
 - Preserve original Looki timestamps.
-- Validate every segment has `end > start`.
-- Record the ledger method as `from_segments`.
-- Send 1 to 500 transcript segments.
-- Each segment should include `text`, `speaker`, `is_user`, `start`, and `end`; `speaker_id` and `person_id` are optional.
+- Record the ledger method as `text_fallback`.
+- Keep segment speaker/timing data in the bridge ledger/provider audit only; the public v1 Omi App import endpoint accepts text.
 
 ### Success Output
 
 Store:
 
 - Omi conversation id
-- status
-- discarded flag
+- status when available from follow-up read
+- discarded flag when available from follow-up read
 
 ### Memory Endpoint
 
-The memory lane writes core memory records through Omi Developer APIs.
+The memory lane submits selected source text to Omi native memory extraction through Integration APIs.
 
 ```text
-GET /v1/dev/user/memories?limit=...&offset=...&categories=...
-POST /v1/dev/user/memories
-POST /v1/dev/user/memories/batch
-PATCH /v1/dev/user/memories/{memory_id}
-DELETE /v1/dev/user/memories/{memory_id}
+POST /v2/integrations/{app_id}/user/memories?uid={uid}
+GET /v2/integrations/{app_id}/memories?uid={uid}
 ```
 
-Core fields:
+Payload fields:
 
-- `content`
-- `visibility`
-- `category`
-- `tags`
+- `text`
+- `text_source`
+- `text_source_spec`
 
 Rules:
 
-- Keep the event date out of `content`.
-- Include date/source tags such as `looki_2026_05_03`.
+- Keep the event date out of the submitted memory body text where possible.
+- Keep date/source tags and source hashes in the bridge ledger.
 - Read existing memories before writing.
 - Record whether rich metadata is actually backend-synced.
-- Do not send `headline` as part of the Developer API core memory create payload. Keep it in the candidate/enrichment layer until backend persistence is confirmed for the chosen endpoint.
+- Do not send both top-level `text` and explicit `memories[]` in the default hosted app path because that can create duplicates.
+
+### Internal Developer API Boundary
+
+Developer API-only capabilities are not part of public v1. Use them only for
+local diagnostics or a future segmented import path after explicit user request.
+
+Internal segmented import endpoint:
+
+```text
+POST /v1/dev/user/conversations/from-segments
+```
+
+Internal segmented payload rules:
+
+- Use `source: "unknown"`.
+- Do not use `source: "external_integration"` until Omi backend supports segmented external integration imports.
+- Validate every segment has `end > start`.
+- Send 1 to 500 transcript segments.
+- Each segment should include `text`, `speaker`, `is_user`, `start`, and `end`; `speaker_id` and `person_id` are optional.
+- Record the ledger method as `from_segments`.
 
 ### Rich Metadata Boundary
 
@@ -316,4 +337,4 @@ Treat local enrichment as display cache until backend persistence is confirmed o
 - HTTP 500 is not success.
 - Do not retry if the ledger already records a successful conversation id.
 - For retryable network failure, keep state `failed` with `retryable=true`.
-- If a text fallback is used during manual recovery, record the ledger method as `text_fallback` so it is not confused with the canonical segmented path.
+- Record the ledger method precisely so public v1 `text_fallback` imports are not confused with internal/future `from_segments` imports.

@@ -25,12 +25,12 @@ Conversation lane:
 ```text
 Looki AUDIO moment
   -> temporary audio download
-  -> XFYun recording-file ASR
+  -> Bailian Paraformer recording-file ASR
   -> normalized transcript segments
   -> Omi App Integration API conversation text import
 ```
 
-The first app version uses the Omi Integration API because it fits the Omi App distribution model. This preserves transcript text and original timestamps, but not full speaker/timing segments. If segment fidelity becomes a hard requirement, use the Developer API `from-segments` path or add a segmented Integration API upstream.
+The first app version uses the Omi Integration API because it fits the Omi App distribution model. This preserves transcript text and original timestamps, but not full speaker/timing segments. Developer API-only segment imports are not part of public v1; if segment fidelity becomes a hard requirement, add a segmented Integration API upstream or keep Developer API `from-segments` as an internal diagnostic path.
 
 Memory lane:
 
@@ -61,10 +61,12 @@ For local-only testing the app uses `data/app-store.json`. For hosted use, creat
 ## Non-Goals
 
 - Do not modify Omi backend.
+- Do not require Omi Developer API keys for the public Omi App v1 flow.
 - Do not write official conversations directly into Omi local SQLite.
 - Do not treat local SQLite enrichment as cross-device sync.
 - Do not permanently store raw Looki audio.
 - Do not import every captured audio fragment without user selection, filtering, and idempotency.
+- Do not expose future provider billing modes in the public UI until pricing and account boundaries are implemented.
 
 ## Target Shape
 
@@ -109,9 +111,9 @@ Scheduler             daily incremental run
 
 For implementation handoff, use `docs/HANDOFF_LOOKI_MEMORY_FORMAT.md` as the canonical Looki -> Omi memory format guide.
 
-## Segmented Import Payload
+## Internal Segmented Import Payload
 
-The schema remains in the repo for the future Developer API segment-preserving path:
+The schema remains in the repo for internal diagnostics and a future segment-preserving path. It is not part of the public Omi App v1 flow:
 
 ```json
 {
@@ -148,4 +150,4 @@ looki-omi-bridge/
 
 ## Verified Trial Notes
 
-Read [VERIFIED_FINDINGS.md](docs/VERIFIED_FINDINGS.md) before implementing network calls. It records the confirmed XFYun parameters, the Omi text fallback import results, and the reason `source: "external_integration"` failed for segmented imports.
+Read [VERIFIED_FINDINGS.md](docs/VERIFIED_FINDINGS.md) before implementing network calls. It records historical XFYun validation, the Omi text fallback import results, and the reason `source: "external_integration"` failed for segmented Developer API imports. The current default ASR provider is Bailian Paraformer.

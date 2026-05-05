@@ -6,13 +6,15 @@ Status: accepted
 
 Omi local SQLite is not the authoritative creation surface. Official conversation creation must use Omi APIs so backend processing can generate summaries, memories, tasks, folders, vectors, and sync state.
 
-## D002: Use From-Segments As Canonical Import Shape
+## D002: Ship Omi App V1 Through Integration Import APIs
 
 Status: accepted
 
-The bridge will use `POST /v1/dev/user/conversations/from-segments` as the canonical import target because it preserves timing and speaker structure.
+The public Omi App v1 will use `POST /v2/integrations/{app_id}/user/conversations?uid={uid}` as the canonical conversation import target because that is the Omi App / External Integration distribution path.
 
-Plain text import remains useful for recovery but should not be the default bridge contract.
+This path preserves transcript text and original Looki start/end timestamps, but it does not preserve full per-segment speaker/timing structure. The ledger must record this as `text_fallback`.
+
+Developer API `POST /v1/dev/user/conversations/from-segments` remains an internal diagnostic or future/upstream-enhancement path only. It should not be required for the public Omi App v1.
 
 ## D003: Use Source Unknown
 
@@ -24,7 +26,9 @@ Use:
 { "source": "unknown" }
 ```
 
-Do not use `external_integration` for segmented Looki imports. Current Omi processing treats `external_integration` as a text-source path and expects `text_source`, which segmented import payloads do not have.
+Do not use `external_integration` for internal segmented Looki imports. Current Omi processing treats `external_integration` as a text-source path and expects `text_source`, which segmented import payloads do not have.
+
+This decision applies only to the internal/future segmented Developer API path. The public Omi App v1 uses Integration API text import instead.
 
 ## D004: ASR Provider Boundary
 
@@ -39,13 +43,13 @@ adapter. Current public XFYun docs document uploaded duration/original
 duration, whole-file silence failure, and VAD-style segmentation controls; they
 do not document an equivalent non-speech-not-billed contract.
 
-## D005: No Per-Run Developer Key Creation
+## D005: No Developer API Requirement For Public V1
 
 Status: accepted
 
-Daily jobs must reuse a configured Omi Developer API key. Creating keys during every import run creates avoidable credential sprawl.
+The public Omi App v1 must not require Omi Developer API keys. It should use the app's Integration API key and the user's enabled app `uid` only.
 
-Key creation is a setup/bootstrap operation only.
+If a local operator uses Developer API-only diagnostics, key creation is a setup/bootstrap operation only. Do not create keys during import runs.
 
 ## D006: Ledger Records Import Method
 
@@ -57,7 +61,8 @@ The ledger must record the Omi write method:
 - `text_fallback`
 - `memory_create`
 
-This matters because the 2026-04-28 validation samples were successfully imported via text fallback after `from-segments` failed with `source=external_integration`. Future canonical imports should use `from_segments` with `source=unknown`, and the ledger must not blur those two outcomes.
+This matters because the 2026-04-28 validation samples were successfully imported via text fallback after `from-segments` failed with `source=external_integration`, and the ledger must not blur those outcomes.
+For the public Omi App v1, `text_fallback` is the canonical method. `from_segments` is reserved for internal diagnostics or a future upstream-supported segmented app API.
 
 ## D007: Separate Conversation Lane And Memory Lane
 
@@ -135,7 +140,7 @@ Defer automatic daily sync, Omi chat tools, video/key-frame deep analysis, revie
 
 Status: accepted
 
-All LLM, ASR, OCR, and multimodal analysis work must sit behind provider adapters. The first version may use the project's default managed providers, but the app must not bake those vendors into the domain model, ledger, or Omi payload contracts.
+ASR, OCR, and multimodal analysis work must sit behind provider adapters. The first public version uses managed Bailian ASR by default and should not bake that vendor into the domain model, ledger, or Omi payload contracts.
 
 Provider modes:
 
@@ -143,7 +148,7 @@ Provider modes:
 - `user_key`: the user brings their own provider API key
 - `subscription`: the user pays for the app's managed provider usage
 
-First version default: `managed`.
+First version default: `managed`. `user_key` and `subscription` are planned account/pricing modes and must stay hidden from the public UI until the pricing, quota, support, and credential-storage boundaries are implemented.
 
 The implementation must preserve a clean boundary for later `user_key` and `subscription` modes:
 
@@ -153,4 +158,4 @@ The implementation must preserve a clean boundary for later `user_key` and `subs
 - record provider name, model, request id/order id, and normalized output hashes in the ledger
 - keep memory/conversation quality gates provider-neutral
 
-The first version needs only the default managed provider path to work end to end, but the config and adapter interfaces should make provider switching an additive change.
+External memory rewriting/gating is not part of public v1. The memory lane submits selected Looki source text to Omi native memory extraction; any future pre-filter/enrichment must stay optional and provider-neutral.

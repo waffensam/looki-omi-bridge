@@ -242,7 +242,7 @@ Every write attempt should produce or update one ledger record:
   },
   "omi": {
     "memoryId": "d2182083-bd85-4249-a927-709d9ae9a370",
-    "method": "memory_create",
+    "method": "memory_native_extract",
     "source": "looki",
     "richMetadataSynced": false
   },
@@ -261,8 +261,8 @@ Every write attempt should produce or update one ledger record:
 2. Validate `content`, `confidence`, `sourceMomentIds`, and `contextSummary`.
 3. Generate tags: `looki`, `looki_daily`, `looki_YYYY_MM_DD`, `eventType`, plus candidate tags.
 4. Dedupe against Omi memories and ledger.
-5. If `writePolicy=auto_write`, call `POST /v2/integrations/{app_id}/user/memories` with explicit `memories[]` core payload only. Use `POST /v1/dev/user/memories` only when this bridge is running under a user Developer API key instead of the Omi App API key.
-6. Record `omi.memoryId`, `method=memory_create`, and `richMetadataSynced=false`.
+5. If `writePolicy=auto_write`, call `POST /v2/integrations/{app_id}/user/memories` with top-level `text`, `text_source`, and `text_source_spec` so Omi native extraction owns final wording and dedupe. Do not send both top-level `text` and explicit `memories[]` in the public v1 hosted path.
+6. Record the ledger as `method=memory_native_extract`, source text hash/preview, import status, and `richMetadataSynced=false`. Record a memory id only when the Omi readback surface returns a matched id. Developer API memory writes are internal diagnostics only, not public v1.
 7. Optionally enrich the local row for display.
 8. Record `local.enriched=true` and `local.sqliteCacheOnly=true`.
 

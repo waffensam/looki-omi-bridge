@@ -1,6 +1,6 @@
 # Omi Apps Documentation Audit
 
-Checked against Omi Apps documentation on 2026-05-04.
+Checked against Omi Apps documentation on 2026-05-05.
 
 ## Current App Type
 
@@ -12,7 +12,7 @@ In scope for the first version:
 - Omi Integration Import APIs for conversations and memories
 - Setup status endpoint
 - OAuth callback support for reliable `uid` capture
-- Private app testing before public submission
+- Single-owner private smoke testing before public submission
 
 Out of scope for the first version:
 
@@ -35,13 +35,13 @@ Out of scope for the first version:
 | Data Import APIs          | App ID + app API key, user enables app, create/read conversations and memories.               | Covered        | Current Omi connector uses `/v2/integrations/{app_id}/user/conversations` and `/user/memories`.                                                                                                                                  |
 | OAuth Authentication      | HTTPS App Home URL, OAuth `state`, callback receives `uid`, setup status can gate enablement. | Partly covered | `/api/oauth/start` and `/api/oauth/callback` now exist. Production still needs HTTPS and durable state/session storage if multi-instance.                                                                                        |
 | Notifications             | Direct/proactive notification API and app secret.                                             | Not applicable | Do not request notification scope for v1.                                                                                                                                                                                        |
-| Publish Your App          | Test functionality, real data, errors; HTTPS; <5s endpoint response; accurate listing.        | Partly covered | Local smoke tests pass. Need hosted HTTPS private test and real import trial.                                                                                                                                                    |
+| Publish Your App          | Test functionality, real data, errors; HTTPS; <5s endpoint response; accurate listing.        | Partly covered | Local smoke tests pass. Need hosted HTTPS single-owner private test and real import trial.                                                                                                                                       |
 | Open Source Your App      | Optional `plugins/` contribution shape.                                                       | Not applicable | This repo is a Next app, not ready for Omi `plugins/` packaging.                                                                                                                                                                 |
 | App Setup                 | Omi Flutter app source setup.                                                                 | Not applicable | Useful only if changing Omi mobile/client source.                                                                                                                                                                                |
 
 ## Submission Field Recommendation
 
-For a private hosted test:
+For the single-owner private hosted test:
 
 ```text
 App name: Looki Omi Bridge
@@ -56,13 +56,16 @@ Health URL: https://{host}/api/health
 
 Do not configure memory trigger, real-time transcript, raw audio, chat tools, or notifications until those flows are implemented.
 
+Do not request or document Omi Developer API-only setup for public v1. Segment-preserving imports, Developer memory CRUD, and local SQLite enrichment are internal/future paths.
+
 ## Remaining Before Public Submission
 
 1. Deploy to HTTPS.
 2. Use Supabase or another hosted durable store, not local JSON.
 3. Set a production `APP_ENCRYPTION_KEY`.
-4. Complete OAuth/private setup test and confirm `uid` is captured either from the callback/setup URL or restored from the browser's remembered UID when macOS opens the bare App Home URL.
+4. Complete the single-owner OAuth/private setup test and confirm `uid` is captured either from the callback/setup URL or restored from the browser's remembered UID when macOS opens the bare App Home URL.
 5. Save Looki credentials for that `uid`; confirm `/api/setup-status?uid={uid}` returns `true`.
 6. Import one memory-only moment and one audio conversation moment.
 7. Verify created records in Omi and in the import ledger.
 8. Add concise app listing copy, icon, privacy disclosure, and setup instructions.
+9. Set production ASR limits (`ASR_MAX_AUDIO_DURATION_MINUTES`, `ASR_MONTHLY_BILLABLE_LIMIT_MINUTES`) to protect managed-provider spend before public visibility.

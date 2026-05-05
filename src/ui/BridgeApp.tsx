@@ -23,7 +23,6 @@ import type {
   AppLedgerRecord,
   ImportRequest,
   ImportResult,
-  ProviderMode,
   PublicProfile,
   SanitizedLookiForYouHint,
   SanitizedLookiForYouItem,
@@ -87,7 +86,6 @@ export function BridgeApp() {
     "https://open.looki.ai/api/v1",
   );
   const [lookiApiKey, setLookiApiKey] = useState("");
-  const [providerMode, setProviderMode] = useState<ProviderMode>("managed");
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [moments, setMoments] = useState<SanitizedLookiMoment[]>([]);
@@ -206,7 +204,6 @@ export function BridgeApp() {
       setProfile(response.profile);
       if (response.profile) {
         setLookiBaseUrl(response.profile.lookiBaseUrl);
-        setProviderMode(response.profile.providerMode);
       }
     } catch {
       setProfile(null);
@@ -233,7 +230,6 @@ export function BridgeApp() {
           uid,
           lookiBaseUrl,
           lookiApiKey,
-          providerMode,
         }),
       });
       setProfile(response.profile);
@@ -414,23 +410,6 @@ export function BridgeApp() {
               placeholder={profile ? "已保存，留空则沿用" : "粘贴 API key"}
               type="password"
             />
-          </label>
-          <label>
-            Provider
-            <select
-              value={providerMode}
-              onChange={(event) =>
-                setProviderMode(event.target.value as ProviderMode)
-              }
-            >
-              <option value="managed">managed</option>
-              <option value="user_key" disabled>
-                user_key
-              </option>
-              <option value="subscription" disabled>
-                subscription
-              </option>
-            </select>
           </label>
           <button
             className="primary"

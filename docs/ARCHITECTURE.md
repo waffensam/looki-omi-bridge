@@ -23,8 +23,8 @@ Looki Connector
 Hosted Connector Backend ---- Import Ledger
   |
   +--> Provider Registry
-  |     +--> ASR Adapter: XFYun or future provider
-  |     +--> Optional LLM/OCR/Multimodal Adapters
+  |     +--> ASR Adapter: Bailian by default, XFYun fallback
+  |     +--> Optional OCR/Multimodal Adapters
   |
   +--> Conversation Normalizer
   |
@@ -83,7 +83,7 @@ The first app conversation write path.
 - language
 - `text_source` / `text_source_spec`
 
-The segment-preserving `OmiFromSegmentsPayload` remains in contracts and schemas for a future Developer API or upstream Integration API enhancement.
+The segment-preserving `OmiFromSegmentsPayload` remains in contracts and schemas for internal diagnostics and a future upstream Integration API enhancement. It is not required for the public Omi App v1.
 
 ### LookiMemoryCandidate
 
@@ -102,21 +102,20 @@ Durable import state. This is the project's source of idempotency.
 
 The ledger records decisions and outcomes for both conversation and memory targets, not raw audio or signed media URLs.
 
-Conversation records must also record the Omi write method (`from_segments` or `text_fallback`) because the first Omi App version imports through text fallback while the future segment-preserving path is `from_segments`.
+Conversation records must also record the Omi write method (`text_fallback` for public v1, `from_segments` only for internal/future segmented paths).
 
 Provider records must include provider name, model, request/order id when available, and normalized output hashes. They must never include API keys, refresh tokens, signed media URLs, raw audio, or full video payloads.
 
 ### ProviderConfig
 
-Per-user AI provider configuration.
+Per-user provider configuration.
 
 - mode: `managed`, `user_key`, or `subscription`
 - ASR provider
-- LLM provider
 - OCR/multimodal provider
 - optional encrypted user-owned API key references
 
-The first version only needs the managed default to be implemented, but the pipeline should call providers through adapter interfaces.
+The first version only exposes the managed default in the UI. `user_key` and `subscription` stay hidden until pricing, quota, support, and credential-storage boundaries are implemented.
 
 ## Pipeline Stages
 
@@ -134,7 +133,7 @@ Download only planned audio to a temp directory. Do not persist signed URLs.
 
 ### 4. Transcribe
 
-Upload audio to the selected ASR provider. XFYun is the initial managed adapter.
+Upload audio to the selected ASR provider. Bailian Paraformer is the initial managed adapter; XFYun is kept as a fallback.
 
 ### 5. Normalize
 
@@ -156,8 +155,7 @@ Good memory sources are durable facts, meaningful personal milestones, or explic
 
 The hosted app default should not generate final memory text itself. Submit the
 selected Looki source text to Omi's native memory extraction so Omi owns wording,
-dedupe, and style. A provider-neutral LLM adapter can remain as an optional
-future pre-filter or enrichment step, but it is not the default memory writer.
+dedupe, and style. External memory rewriting/gating is not part of public v1.
 
 ### 9. Submit Memory Source
 

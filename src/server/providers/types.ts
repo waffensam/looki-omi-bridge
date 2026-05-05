@@ -1,26 +1,5 @@
-import type {
-  LookiMoment,
-  ProviderAudit,
-  SanitizedLookiForYouHint,
-} from "@/src/app-types";
-import type {
-  ImportStage,
-  LookiMemoryCandidate,
-  NormalizedTranscript,
-} from "@/src/contracts.js";
-
-export interface MemoryGateResult {
-  candidate: LookiMemoryCandidate;
-  audit: ProviderAudit;
-}
-
-export interface MemoryGateProvider {
-  buildCandidate(
-    moment: LookiMoment,
-    existingMemoryContents: string[],
-    forYouHints?: SanitizedLookiForYouHint[],
-  ): Promise<MemoryGateResult>;
-}
+import type { ProviderAudit } from "@/src/app-types";
+import type { ImportStage, NormalizedTranscript } from "@/src/contracts.js";
 
 export interface AsrResult {
   transcript: NormalizedTranscript;
