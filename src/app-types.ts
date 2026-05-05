@@ -35,6 +35,42 @@ export interface LookiMoment {
   end_time: string;
 }
 
+export interface LookiInlineFile {
+  temporary_url: string;
+  media_type: "IMAGE" | "VIDEO" | "AUDIO" | string;
+  size?: number | null;
+  duration_ms?: number | null;
+}
+
+export interface LookiForYouItem {
+  id: string;
+  type: string;
+  title: string;
+  description?: string | null;
+  content?: string | null;
+  cover?: LookiInlineFile | null;
+  file?: LookiInlineFile | null;
+  created_at: string;
+  recorded_at: string;
+}
+
+export interface SanitizedLookiForYouItem {
+  id: string;
+  type: string;
+  title: string;
+  description?: string;
+  content?: string;
+  createdAt: string;
+  recordedAt: string;
+  mediaTypes: string[];
+}
+
+export interface SanitizedLookiForYouHint extends SanitizedLookiForYouItem {
+  score: number;
+  matchReason: "time" | "text" | "time_text";
+  role: "audio_context" | "memory_evidence" | "day_context";
+}
+
 export interface SanitizedLookiMoment {
   id: string;
   title: string;
@@ -45,6 +81,8 @@ export interface SanitizedLookiMoment {
   startTime: string;
   endTime: string;
   coverLocation?: string;
+  forYouHints?: SanitizedLookiForYouHint[];
+  forYouScore?: number;
 }
 
 export type ProviderMode = "managed" | "user_key" | "subscription";
@@ -84,7 +122,9 @@ export interface ProviderAudit {
 }
 
 export interface MomentSelection {
-  momentId: string;
+  sourceType?: "moment" | "for_you";
+  sourceId?: string;
+  momentId?: string;
   importMemory: boolean;
   importConversation: boolean;
 }

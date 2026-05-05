@@ -34,11 +34,22 @@
       "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
     },
     "sourceKind": {
-      "enum": ["daily_timeline", "audio", "video", "multimodal_cluster"]
+      "enum": [
+        "daily_timeline",
+        "audio",
+        "video",
+        "multimodal_cluster",
+        "for_you_enriched_moment",
+        "for_you"
+      ]
     },
     "sourceMomentIds": {
       "type": "array",
       "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "forYouItemIds": {
+      "type": "array",
       "items": { "type": "string", "minLength": 1 }
     },
     "eventType": {
@@ -53,6 +64,7 @@
     "evidenceDepth": {
       "enum": [
         "moment_summary",
+        "for_you_enriched_summary",
         "targeted_media_required",
         "targeted_media",
         "user_review"
@@ -88,7 +100,14 @@
         "additionalProperties": false,
         "properties": {
           "kind": {
-            "enum": ["visual", "asr", "ocr", "timeline", "user_review"]
+            "enum": [
+              "visual",
+              "asr",
+              "ocr",
+              "timeline",
+              "for_you",
+              "user_review"
+            ]
           },
           "summary": {
             "type": "string",
@@ -100,6 +119,9 @@
             "maximum": 1
           },
           "sourceMomentId": {
+            "type": "string"
+          },
+          "sourceForYouItemId": {
             "type": "string"
           }
         }

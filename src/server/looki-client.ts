@@ -1,5 +1,6 @@
 import type {
   LookiFile,
+  LookiForYouItem,
   LookiMoment,
   SanitizedLookiMoment,
 } from "@/src/app-types";
@@ -14,6 +15,12 @@ interface LookiResponse<T> {
 
 interface LookiFilesPage {
   items: LookiFile[];
+  next_cursor_id: string | null;
+  has_more: boolean;
+}
+
+interface LookiForYouPage {
+  items: LookiForYouItem[];
   next_cursor_id: string | null;
   has_more: boolean;
 }
@@ -58,6 +65,24 @@ export class LookiClient {
   async getMe(): Promise<unknown> {
     const payload = await this.get<unknown>(this.url("/me"));
     return payload.data;
+  }
+
+  async listForYouItems(date: string): Promise<LookiForYouItem[]> {
+    const items: LookiForYouItem[] = [];
+    let cursor: string | null = null;
+    do {
+      const url = this.url("/for_you/items");
+      url.searchParams.set("group", "all");
+      url.searchParams.set("recorded_from", date);
+      url.searchParams.set("recorded_to", date);
+      url.searchParams.set("order_by", "recorded_at");
+      url.searchParams.set("limit", "100");
+      if (cursor) url.searchParams.set("cursor_id", cursor);
+      const payload = await this.get<LookiForYouPage>(url);
+      items.push(...payload.data.items);
+      cursor = payload.data.has_more ? payload.data.next_cursor_id : null;
+    } while (cursor);
+    return items;
   }
 
   async listFiles(momentId: string): Promise<LookiFile[]> {

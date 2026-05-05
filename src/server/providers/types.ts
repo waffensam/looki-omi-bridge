@@ -1,4 +1,8 @@
-import type { LookiMoment, ProviderAudit } from "@/src/app-types";
+import type {
+  LookiMoment,
+  ProviderAudit,
+  SanitizedLookiForYouHint,
+} from "@/src/app-types";
 import type {
   ImportStage,
   LookiMemoryCandidate,
@@ -14,6 +18,7 @@ export interface MemoryGateProvider {
   buildCandidate(
     moment: LookiMoment,
     existingMemoryContents: string[],
+    forYouHints?: SanitizedLookiForYouHint[],
   ): Promise<MemoryGateResult>;
 }
 

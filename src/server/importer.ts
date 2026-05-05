@@ -3,7 +3,9 @@ import type {
   ImportRequest,
   ImportResult,
   ImportResultItem,
+  LookiForYouItem,
   LookiMoment,
+  SanitizedLookiForYouItem,
 } from "@/src/app-types";
 import type {
   ImportLedgerRecord,
@@ -12,6 +14,7 @@ import type {
   ImportTarget,
   LookiMemoryCandidate,
 } from "@/src/contracts.js";
+import { sanitizeForYouItem } from "@/src/looki-for-you";
 import { shouldWriteMemory } from "@/src/memory";
 import { findAudioFile } from "./looki-client";
 import { getLookiClientForUid } from "./looki-profile";
@@ -19,7 +22,10 @@ import { OmiIntegrationClient } from "./omi-client";
 import { ManagedMemoryGateProvider } from "./providers/memory-gate";
 import { XfyunAsrProvider } from "./providers/xfyun-asr";
 import { sha256 } from "./hash";
-import { conversationIdempotencyKey } from "./idempotency";
+import {
+  conversationIdempotencyKey,
+  memoryIdempotencyKey,
+} from "./idempotency";
 import { readTimeoutMs } from "./fetch-timeout";
 import { getStore } from "./store";
 
@@ -56,11 +62,64 @@ export async function enqueueImportSelections(
   const { client: looki } = await getLookiClientForUid(uid);
   const ledger = await store.listLedger(uid);
   const items: ImportResultItem[] = [];
+  const selectedForYouItemIds = request.selections
+    .filter(
+      (selection) =>
+        selection.importMemory &&
+        (selection.sourceType || "moment") === "for_you",
+    )
+    .map((selection) => selection.sourceId || selection.momentId)
+    .filter(isString);
+  let forYouById: Map<string, LookiForYouItem> | null = null;
 
   for (const selection of request.selections) {
-    const moment = await looki.getMoment(selection.momentId);
+    const sourceType = selection.sourceType || "moment";
+    const sourceId = selection.sourceId || selection.momentId;
+    if (!sourceId) throw new Error("Import source id is required");
+
+    if (sourceType === "for_you") {
+      if (selection.importConversation) {
+        items.push({
+          momentId: sourceId,
+          target: "conversation",
+          status: "skipped",
+          reason: "for_you_is_not_a_conversation_source",
+        });
+      }
+      if (selection.importMemory) {
+        if (!forYouById) {
+          forYouById = new Map(
+            (await looki.listForYouItems(request.date)).map((item) => [
+              item.id,
+              item,
+            ]),
+          );
+        }
+        const item = forYouById.get(sourceId);
+        if (!item) throw new Error(`Looki For You item not found: ${sourceId}`);
+        items.push(
+          await enqueueForYouMemory(
+            uid,
+            sanitizeForYouItem(item),
+            request.date,
+            ledger,
+          ),
+        );
+      }
+      continue;
+    }
+
+    const moment = await looki.getMoment(sourceId);
     if (selection.importMemory) {
-      items.push(await enqueueTarget(uid, moment, "memory", ledger));
+      items.push(
+        await enqueueTarget(
+          uid,
+          moment,
+          "memory",
+          ledger,
+          selectedForYouItemIds,
+        ),
+      );
     }
     if (selection.importConversation) {
       items.push(await enqueueTarget(uid, moment, "conversation", ledger));
@@ -120,6 +179,7 @@ async function enqueueTarget(
   moment: LookiMoment,
   target: ImportTarget,
   ledger: AppLedgerRecord[],
+  contextForYouItemIds: string[] = [],
 ): Promise<ImportResultItem> {
   const idempotencyKey =
     target === "conversation"
@@ -155,10 +215,54 @@ async function enqueueTarget(
     };
   }
 
-  await appendLedger(uid, buildQueuedLedger(moment, idempotencyKey, target));
+  await appendLedger(
+    uid,
+    buildQueuedLedger(moment, idempotencyKey, target, contextForYouItemIds),
+  );
   return {
     momentId: moment.id,
     target,
+    status: "queued",
+    reason: "queued_for_background_import",
+  };
+}
+
+async function enqueueForYouMemory(
+  uid: string,
+  item: SanitizedLookiForYouItem,
+  date: string,
+  ledger: AppLedgerRecord[],
+): Promise<ImportResultItem> {
+  const idempotencyKey = forYouMemoryQueueIdempotencyKey(item, date);
+  const existing = findRelevantLedger(ledger, item.id, "memory", "for_you");
+
+  if (existing && TERMINAL_STATUSES.has(existing.record.status)) {
+    return {
+      momentId: item.id,
+      target: "memory",
+      status: "skipped",
+      reason: `already_${existing.record.status}`,
+      ...(existing.record.omi?.memoryId
+        ? { omiId: existing.record.omi.memoryId }
+        : {}),
+    };
+  }
+
+  if (existing && ACTIVE_STATUSES.has(existing.record.status)) {
+    const status =
+      existing.record.status === "processing" ? "processing" : "queued";
+    return {
+      momentId: item.id,
+      target: "memory",
+      status,
+      reason: existing.record.progress?.message || "already_queued",
+    };
+  }
+
+  await appendLedger(uid, buildQueuedForYouLedger(item, date, idempotencyKey));
+  return {
+    momentId: item.id,
+    target: "memory",
     status: "queued",
     reason: "queued_for_background_import",
   };
@@ -174,10 +278,13 @@ async function processQueuedJob(
   try {
     await updateProgress(job, "processing", "looki", "读取 Looki moment");
     const { client: looki } = await getLookiClientForUid(uid);
+    if (target === "memory" && job.record.looki.sourceType === "for_you") {
+      return await processForYouMemoryJob(uid, job, looki);
+    }
     const moment = await looki.getMoment(momentId);
 
     if (target === "memory") {
-      return await processMemoryJob(uid, job, moment);
+      return await processMemoryJob(uid, job, moment, looki);
     }
     return await processConversationJob(uid, job, moment, looki);
   } catch (error) {
@@ -194,10 +301,153 @@ async function processQueuedJob(
   }
 }
 
+async function processForYouMemoryJob(
+  uid: string,
+  job: AppLedgerRecord,
+  looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
+): Promise<ImportResultItem> {
+  const memoryGate = new ManagedMemoryGateProvider();
+  const omi = new OmiIntegrationClient();
+  const store = getStore();
+  const forYouItemId =
+    job.record.looki.forYouItemId || job.record.looki.momentId;
+  const eventDate =
+    job.record.memory?.eventDate || job.record.looki.startTime.slice(0, 10);
+
+  try {
+    await updateProgress(job, "processing", "memory_gate", "筛选 For You 记忆");
+    const item = await loadForYouItemById(looki, eventDate, forYouItemId);
+    const syntheticMoment = syntheticMomentFromForYou(item, eventDate);
+    const ledger = await store.listLedger(uid);
+    const existingMemoryContents = ledger
+      .map((entry) => entry.record.memory?.content)
+      .filter(isString);
+    const { candidate: rawCandidate, audit } = await memoryGate.buildCandidate(
+      syntheticMoment,
+      existingMemoryContents,
+      [
+        {
+          ...item,
+          score: 1,
+          matchReason: "text",
+          role: "memory_evidence",
+        },
+      ],
+    );
+    const candidate: LookiMemoryCandidate = {
+      ...rawCandidate,
+      idempotencyKey: memoryIdempotencyKey(
+        eventDate,
+        rawCandidate.eventType,
+        `for_you:${item.id}`,
+      ),
+      eventDate,
+      sourceKind: "for_you",
+      sourceMomentIds: [item.id],
+      forYouItemIds: [item.id],
+      evidenceDepth: "for_you_enriched_summary",
+      tags: uniqueStrings([...rawCandidate.tags, "looki_for_you"]),
+    };
+
+    const existingCandidate = await store.findLedger(
+      uid,
+      candidate.idempotencyKey,
+    );
+    if (
+      existingCandidate &&
+      existingCandidate.record.idempotencyKey !== job.record.idempotencyKey &&
+      existingCandidate.record.status === "imported"
+    ) {
+      await appendLedger(
+        uid,
+        buildForYouMemoryLedger(
+          item,
+          eventDate,
+          candidate,
+          "skipped",
+          undefined,
+          job.record.createdAt,
+          job.record.idempotencyKey,
+        ),
+        { memoryGate: audit },
+      );
+      return {
+        momentId: item.id,
+        target: "memory",
+        status: "skipped",
+        reason: "already_imported",
+        ...(existingCandidate.record.omi?.memoryId
+          ? { omiId: existingCandidate.record.omi.memoryId }
+          : {}),
+        candidate,
+      };
+    }
+
+    if (!shouldWriteMemory(candidate.writePolicy)) {
+      await appendLedger(
+        uid,
+        buildForYouMemoryLedger(
+          item,
+          eventDate,
+          candidate,
+          "skipped",
+          undefined,
+          job.record.createdAt,
+          job.record.idempotencyKey,
+        ),
+        { memoryGate: audit },
+      );
+      return {
+        momentId: item.id,
+        target: "memory",
+        status: "skipped",
+        reason: candidate.writePolicy,
+        candidate,
+      };
+    }
+
+    await updateProgress(job, "processing", "memory_write", "写入 Omi memory");
+    const omiId = await omi.createMemory(uid, candidate);
+    await appendLedger(
+      uid,
+      buildForYouMemoryLedger(
+        item,
+        eventDate,
+        candidate,
+        "imported",
+        omiId,
+        job.record.createdAt,
+        job.record.idempotencyKey,
+      ),
+      { memoryGate: audit },
+    );
+    return {
+      momentId: item.id,
+      target: "memory",
+      status: "imported",
+      ...(omiId ? { omiId } : {}),
+      candidate,
+    };
+  } catch (error) {
+    await appendLedger(
+      uid,
+      buildFailedLedger(job.record, "memory", error, job.record.createdAt),
+    );
+    return {
+      momentId: forYouItemId,
+      target: "memory",
+      status: "failed",
+      reason:
+        error instanceof Error ? error.message : "For You memory import failed",
+    };
+  }
+}
+
 async function processMemoryJob(
   uid: string,
   job: AppLedgerRecord,
   moment: LookiMoment,
+  looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
 ): Promise<ImportResultItem> {
   const memoryGate = new ManagedMemoryGateProvider();
   const omi = new OmiIntegrationClient();
@@ -209,9 +459,15 @@ async function processMemoryJob(
     const existingMemoryContents = ledger
       .map((entry) => entry.record.memory?.content)
       .filter(isString);
+    const forYouHints = await loadSelectedForYouHints(
+      moment.date,
+      job.record.memory?.forYouItemIds || [],
+      looki,
+    );
     const { candidate, audit } = await memoryGate.buildCandidate(
       moment,
       existingMemoryContents,
+      forYouHints,
     );
     const existingCandidate = await store.findLedger(
       uid,
@@ -424,10 +680,33 @@ async function processConversationJob(
   }
 }
 
+async function loadSelectedForYouHints(
+  date: string,
+  itemIds: string[],
+  looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
+) {
+  if (itemIds.length === 0) return [];
+  try {
+    const selectedIds = new Set(itemIds);
+    return (await looki.listForYouItems(date))
+      .map(sanitizeForYouItem)
+      .filter((item) => selectedIds.has(item.id))
+      .map((item) => ({
+        ...item,
+        score: 1,
+        matchReason: "text" as const,
+        role: "memory_evidence" as const,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 function buildQueuedLedger(
   moment: LookiMoment,
   idempotencyKey: string,
   target: ImportTarget,
+  contextForYouItemIds: string[] = [],
 ): ImportLedgerRecord {
   const now = new Date().toISOString();
   return {
@@ -436,6 +715,44 @@ function buildQueuedLedger(
     status: "queued",
     decision: "import",
     looki: buildLookiLedger(moment),
+    ...(target === "memory" && contextForYouItemIds.length > 0
+      ? { memory: { forYouItemIds: contextForYouItemIds } }
+      : {}),
+    progress: {
+      stage: "queued",
+      message: "等待后台 worker 处理",
+      updatedAt: now,
+    },
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function buildQueuedForYouLedger(
+  item: SanitizedLookiForYouItem,
+  date: string,
+  idempotencyKey: string,
+): ImportLedgerRecord {
+  const now = new Date().toISOString();
+  const recordedAt = safeDateTime(item.recordedAt, date);
+  return {
+    idempotencyKey,
+    target: "memory",
+    status: "queued",
+    decision: "import",
+    looki: {
+      sourceType: "for_you",
+      momentId: item.id,
+      forYouItemId: item.id,
+      title: item.title,
+      startTime: recordedAt,
+      endTime: recordedAt,
+      mediaTypes: item.mediaTypes,
+    },
+    memory: {
+      eventDate: date,
+      forYouItemIds: [item.id],
+    },
     progress: {
       stage: "queued",
       message: "等待后台 worker 处理",
@@ -475,6 +792,65 @@ function buildMemoryLedger(
       eventDate: candidate.eventDate,
       eventType: candidate.eventType,
       tags: candidate.tags,
+      ...(candidate.forYouItemIds?.length
+        ? { forYouItemIds: candidate.forYouItemIds }
+        : {}),
+    },
+    omi: {
+      ...(memoryId ? { memoryId } : {}),
+      method: "memory_create",
+      source: "looki",
+    },
+    progress: {
+      stage: "done",
+      message: status === "imported" ? "Omi memory 已写入" : "Memory 已跳过",
+      updatedAt: now,
+    },
+    createdAt: createdAt || now,
+    updatedAt: now,
+  };
+}
+
+function buildForYouMemoryLedger(
+  item: SanitizedLookiForYouItem,
+  date: string,
+  candidate: LookiMemoryCandidate,
+  status: ImportStatus,
+  memoryId?: string,
+  createdAt?: string,
+  idempotencyKey = candidate.idempotencyKey,
+): ImportLedgerRecord {
+  const now = new Date().toISOString();
+  const recordedAt = safeDateTime(item.recordedAt, date);
+  return {
+    idempotencyKey,
+    target: "memory",
+    status,
+    decision:
+      status === "imported"
+        ? "import"
+        : candidate.writePolicy === "stage_only"
+          ? "review"
+          : "skip",
+    looki: {
+      sourceType: "for_you",
+      momentId: item.id,
+      forYouItemId: item.id,
+      title: item.title,
+      startTime: recordedAt,
+      endTime: recordedAt,
+      mediaTypes: item.mediaTypes,
+    },
+    memory: {
+      content: candidate.content,
+      candidateIdempotencyKey: candidate.idempotencyKey,
+      writePolicy: candidate.writePolicy,
+      evidenceDepth: candidate.evidenceDepth,
+      confidence: candidate.confidence,
+      eventDate: candidate.eventDate,
+      eventType: candidate.eventType,
+      tags: candidate.tags,
+      forYouItemIds: [item.id],
     },
     omi: {
       ...(memoryId ? { memoryId } : {}),
@@ -621,15 +997,19 @@ async function appendLedger(
 
 function findRelevantLedger(
   ledger: AppLedgerRecord[],
-  momentId: string,
+  sourceId: string,
   target: ImportTarget,
+  sourceType: "moment" | "for_you" = "moment",
 ): AppLedgerRecord | null {
   return (
     ledger
       .filter(
         (entry) =>
           entry.record.target === target &&
-          entry.record.looki.momentId === momentId,
+          (entry.record.looki.sourceType || "moment") === sourceType &&
+          (sourceType === "for_you"
+            ? entry.record.looki.forYouItemId || entry.record.looki.momentId
+            : entry.record.looki.momentId) === sourceId,
       )
       .sort((a, b) =>
         b.record.updatedAt.localeCompare(a.record.updatedAt),
@@ -639,6 +1019,59 @@ function findRelevantLedger(
 
 function memoryQueueIdempotencyKey(moment: LookiMoment): string {
   return `looki:memory:${moment.date}:${moment.id}:${moment.start_time}`;
+}
+
+function forYouMemoryQueueIdempotencyKey(
+  item: SanitizedLookiForYouItem,
+  date: string,
+): string {
+  return `looki:memory:${date}:for_you:${item.id}`;
+}
+
+async function loadForYouItemById(
+  looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
+  date: string,
+  itemId: string,
+): Promise<SanitizedLookiForYouItem> {
+  const item = (await looki.listForYouItems(date))
+    .map(sanitizeForYouItem)
+    .find((candidate) => candidate.id === itemId);
+  if (!item) throw new Error(`Looki For You item not found: ${itemId}`);
+  return item;
+}
+
+function syntheticMomentFromForYou(
+  item: SanitizedLookiForYouItem,
+  date: string,
+): LookiMoment {
+  const recordedAt = safeDateTime(item.recordedAt, date);
+  return {
+    id: item.id,
+    title: item.title,
+    ...(item.description || item.content
+      ? { description: item.description || item.content }
+      : {}),
+    media_types: item.mediaTypes,
+    cover_file: null,
+    date,
+    tz: timezoneOffsetFromIso(recordedAt),
+    start_time: recordedAt,
+    end_time: recordedAt,
+  };
+}
+
+function safeDateTime(value: string, fallbackDate: string): string {
+  if (!Number.isNaN(Date.parse(value))) return value;
+  return `${fallbackDate}T00:00:00.000+08:00`;
+}
+
+function timezoneOffsetFromIso(value: string): string {
+  const match = value.match(/([+-]\d{2}:\d{2})$/);
+  return match?.[1] || "+08:00";
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
 }
 
 function stageToProgress(

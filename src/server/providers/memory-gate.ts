@@ -1,4 +1,4 @@
-import type { LookiMoment } from "@/src/app-types";
+import type { LookiMoment, SanitizedLookiForYouHint } from "@/src/app-types";
 import type { LookiMemoryCandidate } from "@/src/contracts.js";
 import { validateMemoryCandidate } from "@/src/memory";
 import { getManagedProviderConfig } from "../config";
@@ -10,10 +10,11 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
   async buildCandidate(
     moment: LookiMoment,
     existingMemoryContents: string[],
+    forYouHints: SanitizedLookiForYouHint[] = [],
   ): Promise<MemoryGateResult> {
     const config = getManagedProviderConfig();
     if (!config.openaiApiKey) {
-      const candidate = buildHeuristicCandidate(moment);
+      const candidate = buildHeuristicCandidate(moment, forYouHints);
       return {
         candidate,
         audit: {
@@ -33,7 +34,7 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
       body: JSON.stringify({
         model: config.llmModel,
         instructions:
-          "You convert Looki moment metadata into Omi memory candidates. Only create durable, reusable memories. Keep dates and provenance out of content. Return strict JSON.",
+          "You convert selected Looki sources into Omi memory candidates. The primary source may be a Looki moment or a Looki For You item represented as moment metadata. For You items are Looki-processed summaries from original media and may add useful details, but do not copy poetic language, advice, dates, or source wording into the memory body. Treat selected For You context as evidence only when it supports a durable, reusable memory. Keep dates and provenance out of content. Return strict JSON.",
         input: JSON.stringify({
           moment: {
             id: moment.id,
@@ -44,6 +45,17 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
             end_time: moment.end_time,
             media_types: moment.media_types,
           },
+          for_you_items: forYouHints.map((item) => ({
+            id: item.id,
+            type: item.type,
+            title: item.title,
+            description: item.description || "",
+            content: item.content || "",
+            role: item.role,
+            match_reason: item.matchReason,
+            score: item.score,
+            recorded_at: item.recordedAt,
+          })),
           existingMemoryContents,
         }),
         text: {
@@ -74,6 +86,7 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
                 evidenceDepth: {
                   enum: [
                     "moment_summary",
+                    "for_you_enriched_summary",
                     "targeted_media_required",
                     "targeted_media",
                     "user_review",
@@ -119,11 +132,19 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
         moment.id,
       ),
       eventDate: moment.date,
-      sourceKind: moment.media_types.includes("VIDEO")
-        ? "multimodal_cluster"
-        : "daily_timeline",
+      sourceKind:
+        forYouHints.length > 0
+          ? "for_you_enriched_moment"
+          : moment.media_types.includes("VIDEO")
+            ? "multimodal_cluster"
+            : "daily_timeline",
       sourceMomentIds: [moment.id],
+      ...(forYouHints.length > 0
+        ? { forYouItemIds: forYouHints.map((item) => item.id) }
+        : {}),
       visibility: "private",
+      tags:
+        forYouHints.length > 0 ? [...core.tags, "looki_for_you"] : core.tags,
       evidence: [
         {
           kind: "timeline",
@@ -131,6 +152,13 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
           confidence: core.confidence,
           sourceMomentId: moment.id,
         },
+        ...forYouHints.map((item) => ({
+          kind: "for_you" as const,
+          summary: `${item.title}${item.description ? `: ${item.description}` : ""}`,
+          confidence: item.score,
+          sourceMomentId: moment.id,
+          sourceForYouItemId: item.id,
+        })),
       ],
     };
     const errors = validateMemoryCandidate(candidate);
@@ -152,26 +180,44 @@ export class ManagedMemoryGateProvider implements MemoryGateProvider {
   }
 }
 
-function buildHeuristicCandidate(moment: LookiMoment): LookiMemoryCandidate {
+function buildHeuristicCandidate(
+  moment: LookiMoment,
+  forYouHints: SanitizedLookiForYouHint[] = [],
+): LookiMemoryCandidate {
   const description = moment.description?.trim();
-  const content = description || moment.title;
-  const eventType = inferEventType(`${moment.title} ${description || ""}`);
+  const primaryForYou = forYouHints[0];
+  const forYouText = primaryForYou
+    ? primaryForYou.description || primaryForYou.content || primaryForYou.title
+    : "";
+  const content = forYouText || description || moment.title;
+  const eventType = inferEventType(
+    `${moment.title} ${description || ""} ${forYouText}`,
+  );
   const candidate: LookiMemoryCandidate = {
     idempotencyKey: memoryIdempotencyKey(moment.date, eventType, moment.id),
     content,
     eventDate: moment.date,
-    sourceKind: moment.media_types.includes("VIDEO")
-      ? "multimodal_cluster"
-      : "daily_timeline",
+    sourceKind:
+      forYouHints.length > 0
+        ? "for_you_enriched_moment"
+        : moment.media_types.includes("VIDEO")
+          ? "multimodal_cluster"
+          : "daily_timeline",
     sourceMomentIds: [moment.id],
+    ...(forYouHints.length > 0
+      ? { forYouItemIds: forYouHints.map((item) => item.id) }
+      : {}),
     eventType,
-    confidence: 0.86,
-    evidenceDepth: "moment_summary",
-    writePolicy: "auto_write",
+    confidence: forYouHints.length > 0 ? 0.78 : 0.86,
+    evidenceDepth:
+      forYouHints.length > 0 ? "for_you_enriched_summary" : "moment_summary",
+    writePolicy: forYouHints.length > 0 ? "stage_only" : "auto_write",
     visibility: "private",
-    tags: [eventType],
+    tags: forYouHints.length > 0 ? [eventType, "looki_for_you"] : [eventType],
     headline: moment.title.slice(0, 40),
-    contextSummary: `${moment.title}${description ? `: ${description}` : ""}`,
+    contextSummary: `${moment.title}${description ? `: ${description}` : ""}${
+      forYouText ? ` For You: ${forYouText}` : ""
+    }`,
     evidence: [
       {
         kind: "timeline",
@@ -179,6 +225,13 @@ function buildHeuristicCandidate(moment: LookiMoment): LookiMemoryCandidate {
         confidence: 0.86,
         sourceMomentId: moment.id,
       },
+      ...forYouHints.map((item) => ({
+        kind: "for_you" as const,
+        summary: `${item.title}${item.description ? `: ${item.description}` : ""}`,
+        confidence: item.score,
+        sourceMomentId: moment.id,
+        sourceForYouItemId: item.id,
+      })),
     ],
   };
   const errors = validateMemoryCandidate(candidate);

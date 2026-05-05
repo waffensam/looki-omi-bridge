@@ -33,13 +33,16 @@ export type LookiMemorySourceKind =
   | "daily_timeline"
   | "audio"
   | "video"
-  | "multimodal_cluster";
+  | "multimodal_cluster"
+  | "for_you_enriched_moment"
+  | "for_you";
 
 export interface LookiMemoryEvidence {
-  kind: "visual" | "asr" | "ocr" | "timeline" | "user_review";
+  kind: "visual" | "asr" | "ocr" | "timeline" | "for_you" | "user_review";
   summary: string;
   confidence?: number;
   sourceMomentId?: string;
+  sourceForYouItemId?: string;
 }
 
 export interface NormalizedTranscriptSegment {
@@ -96,6 +99,7 @@ export type ImportStage =
 export type MemoryWritePolicy = "auto_write" | "stage_only" | "never_write";
 export type MemoryEvidenceDepth =
   | "moment_summary"
+  | "for_you_enriched_summary"
   | "targeted_media_required"
   | "targeted_media"
   | "user_review";
@@ -123,6 +127,7 @@ export interface LookiMemoryCandidate {
   eventDate: IsoDate;
   sourceKind: LookiMemorySourceKind;
   sourceMomentIds: string[];
+  forYouItemIds?: string[];
   eventType: string;
   confidence: number;
   evidenceDepth: MemoryEvidenceDepth;
@@ -141,7 +146,9 @@ export interface ImportLedgerRecord {
   status: ImportStatus;
   decision?: ImportDecision;
   looki: {
+    sourceType?: "moment" | "for_you";
     momentId: string;
+    forYouItemId?: string;
     title?: string;
     startTime: IsoDateTime;
     endTime: IsoDateTime;
@@ -157,6 +164,7 @@ export interface ImportLedgerRecord {
     eventDate?: IsoDate;
     eventType?: string;
     tags?: string[];
+    forYouItemIds?: string[];
   };
   asr?: {
     provider: string;

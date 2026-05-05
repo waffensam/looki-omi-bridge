@@ -6,6 +6,11 @@ import { describe, it } from "node:test";
 
 import type { AppLedgerRecord } from "@/src/app-types";
 import type { ImportStatus, LookiMemoryCandidate } from "@/src/contracts";
+import {
+  attachForYouHints,
+  attachForYouHintsToMoments,
+  sanitizeForYouItem,
+} from "@/src/looki-for-you";
 import { buildOmiMemoryCreatePayload } from "@/src/memory";
 import {
   conversationIdempotencyKey,
@@ -70,6 +75,197 @@ describe("XFYun signing", () => {
       request.url.searchParams.get("signatureRandom"),
       "abc123abc123abcd",
     );
+  });
+});
+
+describe("Looki For You enrichment", () => {
+  it("strips signed media URLs from For You content", () => {
+    const item = sanitizeForYouItem({
+      id: "for-you-1",
+      type: "IMAGE_POST",
+      title: "迪卡侬亲子选车",
+      description: "孩子期待新车",
+      content:
+        "洞察 ![devo-user-image](https://user.file.devo.looki.ai/signed.jpg?x-looki-token=secret) 店内调试自行车",
+      created_at: "2026-05-04T03:54:20+08:00",
+      recorded_at: "2026-05-03T18:00:00+08:00",
+      cover: {
+        temporary_url: "https://example.test/cover?token=secret",
+        media_type: "IMAGE",
+      },
+      file: null,
+    });
+
+    assert.equal(item.content?.includes("https://"), false);
+    assert.equal(item.content?.includes("x-looki-token"), false);
+    assert.deepEqual(item.mediaTypes, ["IMAGE"]);
+  });
+
+  it("attaches For You hints to text-matching moments", () => {
+    const enriched = attachForYouHints(
+      {
+        id: "moment-1",
+        title: "迪卡侬选购与组装自行车",
+        description: "孩子在店内试骑并等待新车组装",
+        mediaTypes: ["VIDEO", "AUDIO"],
+        date: "2026-05-03",
+        tz: "+08:00",
+        startTime: "2026-05-03T17:42:15+08:00",
+        endTime: "2026-05-03T18:42:55+08:00",
+      },
+      [
+        {
+          id: "for-you-1",
+          type: "IMAGE_POST",
+          title: "迪卡侬亲子选车",
+          description: "看着孩子对新车充满期待。",
+          content: "店内试骑、服务台组装和离店骑行。",
+          createdAt: "2026-05-04T03:54:20+08:00",
+          recordedAt: "2026-05-03T18:00:00+08:00",
+          mediaTypes: ["IMAGE"],
+        },
+      ],
+    );
+
+    assert.equal(enriched.forYouHints?.[0]?.id, "for-you-1");
+    assert.equal(enriched.forYouHints?.[0]?.matchReason, "text");
+    assert.equal(enriched.forYouHints?.[0]?.role, "audio_context");
+    assert.ok((enriched.forYouScore || 0) > 0.36);
+  });
+
+  it("matches end-of-day For You summaries by text", () => {
+    const enriched = attachForYouHints(
+      {
+        id: "moment-bike",
+        title: "迪卡侬选购与组装自行车",
+        description: "在迪卡侬商店内挑选儿童自行车并等待服务台组装调试。",
+        mediaTypes: ["VIDEO"],
+        date: "2026-05-03",
+        tz: "+08:00",
+        startTime: "2026-05-03T17:42:15+08:00",
+        endTime: "2026-05-03T18:42:55+08:00",
+      },
+      [
+        {
+          id: "for-you-late",
+          type: "IMAGE_POST",
+          title: "迪卡侬亲子选车",
+          description: "看着孩子对新车充满期待。",
+          content:
+            "带孩子来到迪卡侬商店，为孩子挑选新自行车，并在服务台前看着新车被组装。",
+          createdAt: "2026-05-04T03:54:20+08:00",
+          recordedAt: "2026-05-03T23:59:59+08:00",
+          mediaTypes: ["IMAGE"],
+        },
+      ],
+    );
+
+    assert.equal(enriched.forYouHints?.[0]?.id, "for-you-late");
+    assert.equal(enriched.forYouHints?.[0]?.matchReason, "text");
+    assert.equal(enriched.forYouHints?.[0]?.role, "memory_evidence");
+  });
+
+  it("assigns time-only For You summaries to the single best moment", () => {
+    const enriched = attachForYouHintsToMoments(
+      [
+        {
+          id: "moment-generic",
+          title: "午后高效办公",
+          description: "在电脑前处理工作。",
+          mediaTypes: ["VIDEO"],
+          date: "2026-05-04",
+          tz: "+08:00",
+          startTime: "2026-05-04T13:30:00+08:00",
+          endTime: "2026-05-04T14:30:00+08:00",
+        },
+        {
+          id: "moment-coffee",
+          title: "咖啡风味探讨",
+          description: "讨论芒果酱风味和生椰拿铁。",
+          mediaTypes: ["AUDIO"],
+          date: "2026-05-04",
+          tz: "+08:00",
+          startTime: "2026-05-04T13:47:51+08:00",
+          endTime: "2026-05-04T13:50:52+08:00",
+        },
+      ],
+      [
+        {
+          id: "for-you-coffee",
+          type: "MOMENT_POST",
+          title: "咖啡风味探讨",
+          description: "讨论芒果酱风味和生椰拿铁。",
+          content: "后续计划是给可乐带一杯咖啡。",
+          createdAt: "2026-05-04T20:19:21+08:00",
+          recordedAt: "2026-05-04T13:47:51+08:00",
+          mediaTypes: ["AUDIO"],
+        },
+      ],
+    );
+
+    assert.equal(enriched[0]?.forYouHints, undefined);
+    assert.equal(enriched[1]?.forYouHints?.[0]?.id, "for-you-coffee");
+  });
+
+  it("can attach a time-only For You summary when no better moment exists", () => {
+    const enriched = attachForYouHintsToMoments(
+      [
+        {
+          id: "moment-generic",
+          title: "午后高效办公",
+          description: "在电脑前处理工作。",
+          mediaTypes: ["VIDEO"],
+          date: "2026-05-04",
+          tz: "+08:00",
+          startTime: "2026-05-04T13:30:00+08:00",
+          endTime: "2026-05-04T14:30:00+08:00",
+        },
+      ],
+      [
+        {
+          id: "for-you-coffee",
+          type: "MOMENT_POST",
+          title: "咖啡风味探讨",
+          description: "讨论芒果酱风味和生椰拿铁。",
+          content: "后续计划是给可乐带一杯咖啡。",
+          createdAt: "2026-05-04T20:19:21+08:00",
+          recordedAt: "2026-05-04T13:47:51+08:00",
+          mediaTypes: ["AUDIO"],
+        },
+      ],
+    );
+
+    assert.equal(enriched[0]?.forYouHints?.[0]?.id, "for-you-coffee");
+    assert.equal(enriched[0]?.forYouHints?.[0]?.matchReason, "time");
+  });
+
+  it("does not attach time-only For You outside the strong time window", () => {
+    const enriched = attachForYouHints(
+      {
+        id: "moment-work",
+        title: "午后办公",
+        description: "在电脑前处理工作。",
+        mediaTypes: ["VIDEO"],
+        date: "2026-05-04",
+        tz: "+08:00",
+        startTime: "2026-05-04T13:00:00+08:00",
+        endTime: "2026-05-04T13:05:00+08:00",
+      },
+      [
+        {
+          id: "for-you-coffee",
+          type: "MOMENT_POST",
+          title: "咖啡风味探讨",
+          description: "讨论芒果酱风味和生椰拿铁。",
+          content: "后续计划是给可乐带一杯咖啡。",
+          createdAt: "2026-05-04T20:19:21+08:00",
+          recordedAt: "2026-05-04T13:21:00+08:00",
+          mediaTypes: ["AUDIO"],
+        },
+      ],
+    );
+
+    assert.equal(enriched.forYouHints, undefined);
   });
 });
 

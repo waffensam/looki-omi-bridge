@@ -9,6 +9,7 @@ import type {
 const ISO_DATE_PREFIX = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}[，,\s:：-]+/;
 const VALID_EVIDENCE_DEPTHS: MemoryEvidenceDepth[] = [
   "moment_summary",
+  "for_you_enriched_summary",
   "targeted_media_required",
   "targeted_media",
   "user_review",
