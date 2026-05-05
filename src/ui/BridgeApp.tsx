@@ -13,6 +13,7 @@ import {
   Mic,
   RefreshCcw,
   Settings2,
+  Sparkles,
   UploadCloud,
 } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
@@ -24,14 +25,31 @@ import type {
   ImportResult,
   ProviderMode,
   PublicProfile,
+  SanitizedLookiForYouHint,
+  SanitizedLookiForYouItem,
   SanitizedLookiMoment,
 } from "@/src/app-types";
+import type { ImportStatus, ImportTarget } from "@/src/contracts";
 import type { RuntimeStatus } from "@/src/server/status";
 
-type SelectionState = Record<
-  string,
-  { importMemory: boolean; importConversation: boolean }
->;
+type ImportMode = "audio" | "memory";
+type BooleanSelectionState = Record<string, boolean>;
+type LookiSourceType = "moment" | "for_you";
+type UidSource = "url" | "stored" | "manual" | null;
+
+const LAST_UID_STORAGE_KEY = "looki-omi-bridge:last-omi-uid";
+
+interface ItemImportStatus {
+  status: ImportStatus;
+  target: ImportTarget;
+  label: string;
+  detail?: string;
+  disabled: boolean;
+  retryable: boolean;
+  updatedAt: string;
+}
+
+type ItemStatusMap = Record<string, ItemImportStatus | undefined>;
 
 interface ApiProfileResponse {
   profile: PublicProfile | null;
@@ -39,6 +57,8 @@ interface ApiProfileResponse {
 
 interface ApiMomentsResponse {
   moments: SanitizedLookiMoment[];
+  forYouItems: SanitizedLookiForYouItem[];
+  forYouError?: string;
 }
 
 interface ApiImportResponse {
@@ -62,16 +82,48 @@ export function BridgeApp() {
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [profile, setProfile] = useState<PublicProfile | null>(null);
   const [moments, setMoments] = useState<SanitizedLookiMoment[]>([]);
-  const [selection, setSelection] = useState<SelectionState>({});
+  const [forYouItems, setForYouItems] = useState<SanitizedLookiForYouItem[]>(
+    [],
+  );
+  const [mode, setMode] = useState<ImportMode>("audio");
+  const [audioSelection, setAudioSelection] = useState<BooleanSelectionState>(
+    {},
+  );
+  const [memorySelection, setMemorySelection] = useState<BooleanSelectionState>(
+    {},
+  );
   const [ledger, setLedger] = useState<AppLedgerRecord[]>([]);
   const [result, setResult] = useState<ImportResult | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [uidSource, setUidSource] = useState<UidSource>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
-    const urlUid = params.get("uid");
-    if (urlUid) setUid(urlUid);
+    const urlUid = params.get("uid")?.trim();
+    const oauthState = params.get("state")?.trim();
+    if (urlUid && oauthState && !params.get("omi_connected")) {
+      const callbackUrl = new URL(
+        "/api/oauth/callback",
+        window.location.origin,
+      );
+      callbackUrl.searchParams.set("uid", urlUid);
+      callbackUrl.searchParams.set("state", oauthState);
+      window.location.replace(callbackUrl.toString());
+      return;
+    }
+    if (urlUid) {
+      setUid(urlUid);
+      setUidSource("url");
+      rememberLastUid(urlUid);
+      removeUidFromUrl();
+    } else {
+      const storedUid = readLastUid();
+      if (storedUid) {
+        setUid(storedUid);
+        setUidSource("stored");
+      }
+    }
     void refreshStatus();
   }, []);
 
@@ -81,13 +133,39 @@ export function BridgeApp() {
     void refreshLedger(uid.trim());
   }, [uid]);
 
-  const selectedCount = useMemo(
-    () =>
-      Object.values(selection).filter(
-        (item) => item.importMemory || item.importConversation,
-      ).length,
-    [selection],
+  const audioMoments = useMemo(
+    () => moments.filter((moment) => moment.mediaTypes.includes("AUDIO")),
+    [moments],
   );
+  const audioStatusBySource = useMemo(
+    () => buildImportStatusMap(ledger, "conversation"),
+    [ledger],
+  );
+  const memoryStatusBySource = useMemo(
+    () => buildImportStatusMap(ledger, "memory"),
+    [ledger],
+  );
+  const audioSelectedCount = useMemo(
+    () =>
+      Object.entries(audioSelection).filter(
+        ([momentId, selected]) =>
+          selected &&
+          !isSelectionLocked(
+            audioStatusBySource[sourceStatusKey("moment", momentId)],
+          ),
+      ).length,
+    [audioSelection, audioStatusBySource],
+  );
+  const memorySelectedCount = useMemo(
+    () =>
+      Object.entries(memorySelection).filter(
+        ([key, selected]) =>
+          selected && !isSelectionLocked(memoryStatusBySource[key]),
+      ).length,
+    [memorySelection, memoryStatusBySource],
+  );
+  const memoryCandidateCount = forYouItems.length + moments.length;
+  const hasLoadedLooki = moments.length > 0 || forYouItems.length > 0;
   const hasActiveJobs = useMemo(
     () =>
       ledger.some(
@@ -128,10 +206,7 @@ export function BridgeApp() {
   async function refreshLedger(nextUid = uid.trim()) {
     if (!nextUid) return;
     try {
-      const response = await api<ApiLedgerResponse>(
-        `/api/ledger?uid=${encodeURIComponent(nextUid)}`,
-      );
-      setLedger(response.ledger);
+      setLedger(await fetchLedger(nextUid));
     } catch {
       setLedger([]);
     }
@@ -150,31 +225,92 @@ export function BridgeApp() {
       });
       setProfile(response.profile);
       setLookiApiKey("");
+      rememberLastUid(response.profile?.uid || uid.trim());
+      setUidSource("stored");
     });
   }
 
   async function loadMoments() {
     await run("moments", async () => {
-      const response = await api<ApiMomentsResponse>(
-        `/api/moments?uid=${encodeURIComponent(uid.trim())}&date=${encodeURIComponent(date)}`,
-      );
-      setMoments(response.moments);
-      setSelection(
-        Object.fromEntries(
-          response.moments.map((moment) => [
-            moment.id,
-            defaultSelection(moment),
-          ]),
+      const nextUid = uid.trim();
+      const [response, nextLedger] = await Promise.all([
+        api<ApiMomentsResponse>(
+          `/api/moments?uid=${encodeURIComponent(nextUid)}&date=${encodeURIComponent(date)}`,
         ),
+        fetchLedger(nextUid).catch(() => []),
+      ]);
+      const nextAudioStatus = buildImportStatusMap(nextLedger, "conversation");
+      const nextMemoryStatus = buildImportStatusMap(nextLedger, "memory");
+      setMoments(response.moments);
+      setForYouItems(response.forYouItems || []);
+      setLedger(nextLedger);
+      if (response.forYouError) {
+        setError(`For You 读取失败，已仅返回 moments：${response.forYouError}`);
+      }
+      setAudioSelection(
+        Object.fromEntries(
+          response.moments
+            .filter((moment) => moment.mediaTypes.includes("AUDIO"))
+            .map((moment) => [
+              moment.id,
+              canDefaultSelectItem(
+                nextAudioStatus[sourceStatusKey("moment", moment.id)],
+              ),
+            ]),
+        ),
+      );
+      setMemorySelection(
+        Object.fromEntries([
+          ...(response.forYouItems || []).map((item) => [
+            memorySourceKey("for_you", item.id),
+            !isDayContextForYou(item) &&
+              canDefaultSelectItem(
+                nextMemoryStatus[sourceStatusKey("for_you", item.id)],
+              ),
+          ]),
+          ...response.moments.map((moment) => [
+            memorySourceKey("moment", moment.id),
+            false,
+          ]),
+        ] as Array<[string, boolean]>),
       );
       setResult(null);
     });
   }
 
   async function importSelected() {
-    const selections: ImportRequest["selections"] = Object.entries(selection)
-      .filter(([, item]) => item.importMemory || item.importConversation)
-      .map(([momentId, item]) => ({ momentId, ...item }));
+    const selections: ImportRequest["selections"] =
+      mode === "audio"
+        ? Object.entries(audioSelection)
+            .filter(
+              ([momentId, selected]) =>
+                selected &&
+                !isSelectionLocked(
+                  audioStatusBySource[sourceStatusKey("moment", momentId)],
+                ),
+            )
+            .map(([momentId]) => ({
+              sourceType: "moment",
+              sourceId: momentId,
+              momentId,
+              importMemory: false,
+              importConversation: true,
+            }))
+        : Object.entries(memorySelection)
+            .filter(
+              ([key, selected]) =>
+                selected && !isSelectionLocked(memoryStatusBySource[key]),
+            )
+            .map(([key]) => {
+              const source = parseMemorySourceKey(key);
+              return {
+                sourceType: source.type,
+                sourceId: source.id,
+                ...(source.type === "moment" ? { momentId: source.id } : {}),
+                importMemory: true,
+                importConversation: false,
+              };
+            });
     await run("import", async () => {
       const response = await api<ApiImportResponse>("/api/import", {
         method: "POST",
@@ -231,9 +367,22 @@ export function BridgeApp() {
             Omi UID
             <input
               value={uid}
-              onChange={(event) => setUid(event.target.value)}
+              onChange={(event) => {
+                setUid(event.target.value);
+                setUidSource(event.target.value.trim() ? "manual" : null);
+              }}
               placeholder="uid"
             />
+            {uidSource === "stored" ? (
+              <span className="field-hint">
+                已从本机浏览器恢复。若不是当前 Omi 账号，请替换后保存。
+              </span>
+            ) : null}
+            {uidSource === "url" ? (
+              <span className="field-hint">
+                已从 Omi 打开的链接读取 UID，并已记住到本机浏览器。
+              </span>
+            ) : null}
           </label>
           <label>
             Looki Base URL
@@ -291,9 +440,30 @@ export function BridgeApp() {
               连接信息只保存在服务端存储，页面不会回显 API key。
             </p>
           )}
+          <p className="privacy-note">
+            Looki API key 代表对 Looki 内容的读取权限。本页读取所选日期的
+            moments/For You；只有导入录音时才下载临时音频。
+          </p>
         </aside>
 
         <section className="main-panel">
+          {!uid.trim() ? (
+            <div className="notice setup-warning">
+              <AlertTriangle size={18} />
+              <div>
+                <strong>缺少 Omi UID</strong>
+                <span>
+                  Mac 端 Open 有时只打开 App Home URL，不带用户 ID。请从 Omi
+                  的授权/设置入口打开一次，或手动填入
+                  UID；之后本机浏览器会自动记住。
+                </span>
+              </div>
+              <a className="link-button" href="/api/oauth/start">
+                从 Omi 授权连接
+              </a>
+            </div>
+          ) : null}
+
           <div className="toolbar">
             <label className="date-field">
               <CalendarDays size={17} />
@@ -311,19 +481,12 @@ export function BridgeApp() {
               )}
               读取 Looki
             </button>
-            <button
-              className="primary"
-              disabled={!selectedCount || busy === "import"}
-              onClick={importSelected}
-            >
-              {busy === "import" ? (
-                <Loader2 className="spin" size={17} />
-              ) : (
-                <UploadCloud size={17} />
-              )}
-              导入选中
-            </button>
-            <span className="count">{selectedCount} selected</span>
+            {hasLoadedLooki ? (
+              <span className="count">
+                读取：{audioMoments.length} 录音 · {forYouItems.length} For You
+                · {moments.length} moments
+              </span>
+            ) : null}
           </div>
 
           {error ? (
@@ -340,25 +503,54 @@ export function BridgeApp() {
             </div>
           ) : null}
 
-          <div className="moment-list">
-            {moments.length === 0 ? (
-              <EmptyState />
-            ) : (
-              moments.map((moment) => (
-                <MomentRow
-                  key={moment.id}
-                  moment={moment}
-                  value={selection[moment.id] || defaultSelection(moment)}
-                  onChange={(next) =>
-                    setSelection((current) => ({
-                      ...current,
-                      [moment.id]: next,
-                    }))
-                  }
-                />
-              ))
-            )}
-          </div>
+          <ModeTabs
+            audioCount={audioMoments.length}
+            forYouCount={forYouItems.length}
+            memoryCount={memoryCandidateCount}
+            mode={mode}
+            onChange={setMode}
+          />
+
+          {mode === "audio" ? (
+            <AudioImportView
+              busy={busy === "import"}
+              moments={audioMoments}
+              selectedCount={audioSelectedCount}
+              selection={audioSelection}
+              statusBySource={audioStatusBySource}
+              onChange={(momentId, selected) => {
+                if (
+                  isSelectionLocked(
+                    audioStatusBySource[sourceStatusKey("moment", momentId)],
+                  )
+                ) {
+                  return;
+                }
+                setAudioSelection((current) => ({
+                  ...current,
+                  [momentId]: selected,
+                }));
+              }}
+              onImport={importSelected}
+            />
+          ) : (
+            <MemoryImportView
+              busy={busy === "import"}
+              forYouItems={forYouItems}
+              moments={moments}
+              selectedCount={memorySelectedCount}
+              selection={memorySelection}
+              statusBySource={memoryStatusBySource}
+              onChange={(key, selected) => {
+                if (isSelectionLocked(memoryStatusBySource[key])) return;
+                setMemorySelection((current) => ({
+                  ...current,
+                  [key]: selected,
+                }));
+              }}
+              onImport={importSelected}
+            />
+          )}
 
           {result ? <ResultPanel result={result} /> : null}
         </section>
@@ -392,62 +584,368 @@ export function BridgeApp() {
   );
 }
 
-function MomentRow({
+function ModeTabs({
+  audioCount,
+  forYouCount,
+  memoryCount,
+  mode,
+  onChange,
+}: {
+  audioCount: number;
+  forYouCount: number;
+  memoryCount: number;
+  mode: ImportMode;
+  onChange: (mode: ImportMode) => void;
+}) {
+  return (
+    <div className="mode-tabs">
+      <button
+        className={mode === "audio" ? "active" : ""}
+        onClick={() => onChange("audio")}
+      >
+        <span className="tab-label">
+          <Mic size={16} />
+          录音导入
+        </span>
+        <span className="tab-count">{audioCount} 条录音</span>
+      </button>
+      <button
+        className={mode === "memory" ? "active" : ""}
+        onClick={() => onChange("memory")}
+      >
+        <span className="tab-label">
+          <Brain size={16} />
+          记忆导入
+        </span>
+        <span className="tab-count">
+          {memoryCount} 项候选 · {forYouCount} For You
+        </span>
+      </button>
+    </div>
+  );
+}
+
+function AudioImportView({
+  busy,
+  moments,
+  selectedCount,
+  selection,
+  statusBySource,
+  onChange,
+  onImport,
+}: {
+  busy: boolean;
+  moments: SanitizedLookiMoment[];
+  selectedCount: number;
+  selection: BooleanSelectionState;
+  statusBySource: ItemStatusMap;
+  onChange: (momentId: string, selected: boolean) => void;
+  onImport: () => void;
+}) {
+  return (
+    <section className="import-view">
+      <ViewActionBar
+        busy={busy}
+        detail={`${moments.length} 条录音 · 已选 ${selectedCount}`}
+        label="导入录音"
+        note="默认全选当天录音；For You 只作为识别录音内容的补充说明。"
+        selectedCount={selectedCount}
+        onImport={onImport}
+      />
+      <div className="moment-list">
+        {moments.length === 0 ? (
+          <EmptyState message="这一天没有可导入的录音 moment。" />
+        ) : (
+          moments.map((moment) => (
+            <AudioMomentRow
+              key={moment.id}
+              moment={moment}
+              selected={Boolean(selection[moment.id])}
+              status={statusBySource[sourceStatusKey("moment", moment.id)]}
+              onChange={(selected) => onChange(moment.id, selected)}
+            />
+          ))
+        )}
+      </div>
+    </section>
+  );
+}
+
+function MemoryImportView({
+  busy,
+  forYouItems,
+  moments,
+  selectedCount,
+  selection,
+  statusBySource,
+  onChange,
+  onImport,
+}: {
+  busy: boolean;
+  forYouItems: SanitizedLookiForYouItem[];
+  moments: SanitizedLookiMoment[];
+  selectedCount: number;
+  selection: BooleanSelectionState;
+  statusBySource: ItemStatusMap;
+  onChange: (key: string, selected: boolean) => void;
+  onImport: () => void;
+}) {
+  return (
+    <section className="import-view">
+      <ViewActionBar
+        busy={busy}
+        detail={`${forYouItems.length} For You · ${moments.length} moments · 已选 ${selectedCount}`}
+        label="导入记忆"
+        note="默认勾选非当日背景的 For You；moments 默认不勾选。导入后由后台 LLM 合成与去重。"
+        selectedCount={selectedCount}
+        onImport={onImport}
+      />
+
+      <section className="candidate-section">
+        <SectionTitle icon={<Sparkles size={16} />} title="For You" />
+        <div className="memory-candidate-grid">
+          {forYouItems.length === 0 ? (
+            <EmptyState message="这一天没有 For You 内容。" />
+          ) : (
+            forYouItems.map((item) => {
+              const key = memorySourceKey("for_you", item.id);
+              return (
+                <MemoryCandidateCard
+                  key={key}
+                  checked={Boolean(selection[key])}
+                  description={item.description || item.content || ""}
+                  meta={[
+                    item.type,
+                    isDayContextForYou(item) ? "当日背景" : "高质量线索",
+                  ]}
+                  status={statusBySource[key]}
+                  title={item.title}
+                  onChange={(selected) => onChange(key, selected)}
+                />
+              );
+            })
+          )}
+        </div>
+      </section>
+
+      <section className="candidate-section">
+        <SectionTitle icon={<Clock3 size={16} />} title="Moments" />
+        <div className="moment-list compact">
+          {moments.length === 0 ? (
+            <EmptyState />
+          ) : (
+            moments.map((moment) => {
+              const key = memorySourceKey("moment", moment.id);
+              return (
+                <MomentMemoryRow
+                  key={key}
+                  moment={moment}
+                  selected={Boolean(selection[key])}
+                  status={statusBySource[key]}
+                  onChange={(selected) => onChange(key, selected)}
+                />
+              );
+            })
+          )}
+        </div>
+      </section>
+    </section>
+  );
+}
+
+function ViewActionBar({
+  busy,
+  detail,
+  label,
+  note,
+  selectedCount,
+  onImport,
+}: {
+  busy: boolean;
+  detail: string;
+  label: string;
+  note: string;
+  selectedCount: number;
+  onImport: () => void;
+}) {
+  return (
+    <div className="view-action-bar">
+      <div>
+        <p className="view-detail">{detail}</p>
+        <p>{note}</p>
+      </div>
+      <button
+        className="primary"
+        disabled={!selectedCount || busy}
+        onClick={onImport}
+      >
+        {busy ? (
+          <Loader2 className="spin" size={17} />
+        ) : (
+          <UploadCloud size={17} />
+        )}
+        {label}
+      </button>
+    </div>
+  );
+}
+
+function AudioMomentRow({
   moment,
-  value,
+  selected,
+  status,
   onChange,
 }: {
   moment: SanitizedLookiMoment;
-  value: { importMemory: boolean; importConversation: boolean };
-  onChange: (next: {
-    importMemory: boolean;
-    importConversation: boolean;
-  }) => void;
+  selected: boolean;
+  status: ItemImportStatus | undefined;
+  onChange: (selected: boolean) => void;
 }) {
-  const hasAudio = moment.mediaTypes.includes("AUDIO");
+  const locked = isSelectionLocked(status);
   return (
-    <article className="moment-row">
-      <div className="moment-main">
-        <div className="moment-time">
-          <Clock3 size={15} />
-          {shortTime(moment.startTime)} - {shortTime(moment.endTime)}
-        </div>
-        <h2>{moment.title}</h2>
-        {moment.description ? <p>{moment.description}</p> : null}
-        <div className="tag-row">
-          {moment.mediaTypes.map((type) => (
-            <span key={type} className="tag">
-              {type}
-            </span>
-          ))}
-        </div>
-      </div>
+    <article className={itemClassName("moment-row", status, selected)}>
+      <label className="row-check">
+        <input
+          checked={selected && !locked}
+          disabled={locked}
+          onChange={(event) => onChange(event.target.checked)}
+          type="checkbox"
+        />
+      </label>
+      <MomentBody moment={moment} showForYouNote />
       <div className="moment-actions">
-        <label className="toggle">
-          <input
-            checked={value.importMemory}
-            onChange={(event) =>
-              onChange({ ...value, importMemory: event.target.checked })
-            }
-            type="checkbox"
-          />
-          <Brain size={16} />
-          Memory
-        </label>
-        <label className="toggle">
-          <input
-            checked={value.importConversation}
-            disabled={!hasAudio}
-            onChange={(event) =>
-              onChange({ ...value, importConversation: event.target.checked })
-            }
-            type="checkbox"
-          />
+        {status ? <ItemStatusBadge status={status} /> : null}
+        <span className="action-label">
           <Mic size={16} />
           录音会话
-        </label>
+        </span>
       </div>
+      {status?.detail ? <ItemStatusNote status={status} /> : null}
     </article>
+  );
+}
+
+function MomentMemoryRow({
+  moment,
+  selected,
+  status,
+  onChange,
+}: {
+  moment: SanitizedLookiMoment;
+  selected: boolean;
+  status: ItemImportStatus | undefined;
+  onChange: (selected: boolean) => void;
+}) {
+  const locked = isSelectionLocked(status);
+  return (
+    <article
+      className={itemClassName("moment-row memory-row", status, selected)}
+    >
+      <label className="row-check">
+        <input
+          checked={selected && !locked}
+          disabled={locked}
+          onChange={(event) => onChange(event.target.checked)}
+          type="checkbox"
+        />
+      </label>
+      <MomentBody moment={moment} />
+      <div className="moment-actions">
+        {status ? <ItemStatusBadge status={status} /> : null}
+        <span className="action-label">
+          <Brain size={16} />
+          Memory
+        </span>
+      </div>
+      {status?.detail ? <ItemStatusNote status={status} /> : null}
+    </article>
+  );
+}
+
+function MomentBody({
+  moment,
+  showForYouNote = false,
+}: {
+  moment: SanitizedLookiMoment;
+  showForYouNote?: boolean;
+}) {
+  return (
+    <div className="moment-main">
+      <div className="moment-time">
+        <Clock3 size={15} />
+        {shortTime(moment.startTime)} - {shortTime(moment.endTime)}
+      </div>
+      <h2>{moment.title}</h2>
+      {moment.description ? <p>{moment.description}</p> : null}
+      {showForYouNote && moment.forYouHints?.[0] ? (
+        <ForYouNote hint={moment.forYouHints[0]} />
+      ) : null}
+      <div className="tag-row">
+        {moment.mediaTypes.map((type) => (
+          <span key={type} className="tag">
+            {type}
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MemoryCandidateCard({
+  checked,
+  description,
+  meta,
+  status,
+  title,
+  onChange,
+}: {
+  checked: boolean;
+  description: string;
+  meta: string[];
+  status: ItemImportStatus | undefined;
+  title: string;
+  onChange: (selected: boolean) => void;
+}) {
+  const locked = isSelectionLocked(status);
+  return (
+    <label className={itemClassName("memory-candidate-card", status, checked)}>
+      <input
+        checked={checked && !locked}
+        className="candidate-checkbox"
+        disabled={locked}
+        onChange={(event) => onChange(event.target.checked)}
+        type="checkbox"
+      />
+      <div className="candidate-content">
+        <strong className="candidate-title">{title}</strong>
+        <div className="candidate-meta">
+          {meta.map((item) => (
+            <span className={candidateMetaClass(item)} key={item}>
+              {item}
+            </span>
+          ))}
+          {status ? <ItemStatusBadge status={status} /> : null}
+        </div>
+        {status?.detail ? <ItemStatusNote status={status} /> : null}
+        <p>{description}</p>
+      </div>
+    </label>
+  );
+}
+
+function ForYouNote({ hint }: { hint: SanitizedLookiForYouHint }) {
+  return (
+    <div className="for-you-note">
+      <div className="for-you-note-title">
+        <Sparkles size={14} />
+        <span>
+          {hint.role === "audio_context" ? "录音补充" : "Memory 线索"}
+        </span>
+        <small>{matchReasonLabel(hint.matchReason)}</small>
+      </div>
+      <strong>{hint.title}</strong>
+      <p>{previewForYouHint(hint)}</p>
+    </div>
   );
 }
 
@@ -529,20 +1027,182 @@ function PanelTitle({ icon, title }: { icon: ReactNode; title: string }) {
   );
 }
 
-function EmptyState() {
+function SectionTitle({ icon, title }: { icon: ReactNode; title: string }) {
   return (
-    <div className="empty-state">
-      <CalendarDays size={28} />
-      <p>选择日期后读取 Looki moments。</p>
+    <div className="section-title">
+      {icon}
+      <h3>{title}</h3>
     </div>
   );
 }
 
-function defaultSelection(moment: SanitizedLookiMoment) {
+function EmptyState({ message }: { message?: string }) {
+  return (
+    <div className="empty-state">
+      <CalendarDays size={28} />
+      <p>{message || "选择日期后读取 Looki moments。"}</p>
+    </div>
+  );
+}
+
+function ItemStatusBadge({ status }: { status: ItemImportStatus }) {
+  return (
+    <span className={`item-status-badge ${status.status}`}>{status.label}</span>
+  );
+}
+
+function ItemStatusNote({ status }: { status: ItemImportStatus }) {
+  return <p className="item-status-note">{status.detail}</p>;
+}
+
+function buildImportStatusMap(
+  ledger: AppLedgerRecord[],
+  target: ImportTarget,
+): ItemStatusMap {
+  const map: ItemStatusMap = {};
+  for (const entry of ledger) {
+    if (entry.record.target !== target) continue;
+    const sourceType = entry.record.looki.sourceType || "moment";
+    const sourceId =
+      sourceType === "for_you"
+        ? entry.record.looki.forYouItemId || entry.record.looki.momentId
+        : entry.record.looki.momentId;
+    const key = sourceStatusKey(sourceType, sourceId);
+    const current = map[key];
+    if (
+      !current ||
+      entry.record.updatedAt.localeCompare(current.updatedAt) > 0
+    ) {
+      map[key] = ledgerEntryToItemStatus(entry);
+    }
+  }
+  return map;
+}
+
+function ledgerEntryToItemStatus(entry: AppLedgerRecord): ItemImportStatus {
+  const { record } = entry;
+  const detail = itemStatusDetail(record);
   return {
-    importMemory: true,
-    importConversation: moment.mediaTypes.includes("AUDIO"),
+    status: record.status,
+    target: record.target,
+    label: importStatusLabel(record.status),
+    ...(detail ? { detail } : {}),
+    disabled: isLockedImportStatus(record.status),
+    retryable: record.status === "failed" && Boolean(record.error?.retryable),
+    updatedAt: record.updatedAt,
   };
+}
+
+function itemStatusDetail(
+  record: AppLedgerRecord["record"],
+): string | undefined {
+  if (record.error?.message) return record.error.message;
+  if (record.omi?.conversationId)
+    return `Omi conversation: ${record.omi.conversationId}`;
+  if (record.omi?.memoryId) return `Omi memory: ${record.omi.memoryId}`;
+  if (record.progress?.message) return record.progress.message;
+  return undefined;
+}
+
+function importStatusLabel(status: ImportStatus): string {
+  const labels: Record<ImportStatus, string> = {
+    failed: "上次失败",
+    imported: "已导入",
+    planned: "已计划",
+    processing: "处理中",
+    queued: "已排队",
+    skipped: "已跳过",
+    transcribed: "已转写",
+  };
+  return labels[status];
+}
+
+function isSelectionLocked(status?: ItemImportStatus): boolean {
+  return Boolean(status?.disabled);
+}
+
+function isLockedImportStatus(status: ImportStatus): boolean {
+  return (
+    status === "imported" ||
+    status === "queued" ||
+    status === "processing" ||
+    status === "skipped"
+  );
+}
+
+function canDefaultSelectItem(status?: ItemImportStatus): boolean {
+  if (!status) return true;
+  return status.status === "failed" && status.retryable;
+}
+
+function itemClassName(
+  baseClassName: string,
+  status: ItemImportStatus | undefined,
+  selected: boolean,
+): string {
+  return [
+    baseClassName,
+    selected && !isSelectionLocked(status) ? "is-selected" : "",
+    status ? `status-${status.status}` : "",
+    isSelectionLocked(status) ? "is-disabled" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function isDayContextForYou(item: SanitizedLookiForYouItem): boolean {
+  return item.type === "DAILY_VLOG" || item.type === "USER_EVENT_ANALYSIS";
+}
+
+function candidateMetaClass(value: string): string {
+  if (value === "高质量线索") return "quality";
+  if (value === "当日背景") return "context";
+  return "source";
+}
+
+function sourceStatusKey(type: LookiSourceType, id: string): string {
+  return `${type}:${id}`;
+}
+
+function memorySourceKey(type: LookiSourceType, id: string): string {
+  return sourceStatusKey(type, id);
+}
+
+function rememberLastUid(uid: string) {
+  if (!uid) return;
+  try {
+    window.localStorage.setItem(LAST_UID_STORAGE_KEY, uid);
+  } catch {
+    // Some embedded browsers can block localStorage; the page still works with manual UID entry.
+  }
+}
+
+function readLastUid(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_UID_STORAGE_KEY)?.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
+function removeUidFromUrl() {
+  const current = new URL(window.location.href);
+  current.searchParams.delete("uid");
+  current.searchParams.delete("state");
+  current.searchParams.delete("omi_connected");
+  const next = `${current.pathname}${current.search}${current.hash}`;
+  window.history.replaceState(null, "", next);
+}
+
+function parseMemorySourceKey(key: string): {
+  type: LookiSourceType;
+  id: string;
+} {
+  const [type, ...rest] = key.split(":");
+  if (type !== "for_you" && type !== "moment") {
+    throw new Error(`Unknown memory source: ${key}`);
+  }
+  return { type, id: rest.join(":") };
 }
 
 async function api<T>(url: string, init?: RequestInit): Promise<T> {
@@ -562,6 +1222,13 @@ async function api<T>(url: string, init?: RequestInit): Promise<T> {
   return payload as T;
 }
 
+async function fetchLedger(uid: string): Promise<AppLedgerRecord[]> {
+  const response = await api<ApiLedgerResponse>(
+    `/api/ledger?uid=${encodeURIComponent(uid)}`,
+  );
+  return response.ledger;
+}
+
 function localDate(): string {
   const date = new Date();
   const offset = date.getTimezoneOffset() * 60_000;
@@ -575,6 +1242,18 @@ function shortTime(value: string): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function previewForYouHint(hint: SanitizedLookiForYouHint): string {
+  const text = hint.description || hint.content || "";
+  if (text.length <= 180) return text;
+  return `${text.slice(0, 179).trim()}...`;
+}
+
+function matchReasonLabel(reason: SanitizedLookiForYouHint["matchReason"]) {
+  if (reason === "time_text") return "时间+文本";
+  if (reason === "time") return "时间";
+  return "文本";
 }
 
 function formatDateTime(value: string): string {
