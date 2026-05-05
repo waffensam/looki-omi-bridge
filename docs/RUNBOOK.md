@@ -5,7 +5,7 @@
 1. Create `.env.local` from `config/.env.example`.
 2. Fill `OMI_APP_ID` and `OMI_APP_API_KEY` from the Omi App configuration.
 3. Fill XFYun credentials for first-version recording imports.
-4. Fill `MANAGED_OPENAI_API_KEY` if managed LLM memory gating should use OpenAI; otherwise the app falls back to deterministic rules.
+4. `MANAGED_OPENAI_API_KEY` is optional. The hosted memory lane defaults to Omi native extraction; managed LLM adapters are reserved for future pre-filter/enrichment work.
 5. For hosted runs, create the Supabase tables in `supabase/schema.sql`; local runs can use `data/app-store.json`.
 6. Save Looki `base_url` and API key in the app UI for each Omi uid.
 
@@ -122,25 +122,22 @@ Use Omi memory read API before writing.
 
 Skip or stage if an existing memory already covers the same fact.
 
-### Step 3: Write Core Memory
+### Step 3: Submit Memory Source To Omi
 
 Write memory through `POST /v2/integrations/{app_id}/user/memories`:
 
 ```json
 {
-  "text": "用户重视陪孩子参与户外活动。",
+  "text": "标题：家的暖色时光\n摘要：和家人一起在家中欣赏城市夜景。",
   "text_source": "other",
-  "text_source_spec": "Looki selected memory candidate",
-  "memories": [
-    {
-      "content": "用户重视陪孩子参与户外活动。",
-      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
-    }
-  ]
+  "text_source_spec": "looki:2026-05-04:for_you:example"
 }
 ```
 
-Do not include date or source prose in the memory body. The Omi Integration API requires top-level `text`, but it should be the same short memory content, not `contextSummary`; otherwise local/ledger context can become a second extraction source. Keep `headline`, `context_summary`, evidence depth, provider audit, and source moment ids in the candidate and ledger layer.
+Do not send `memories[]` in the default hosted app path. Current Omi behavior
+extracts from top-level `text` and also writes explicit `memories[]`, so sending
+both can create duplicates. Keep Looki source ids, source text hash, evidence
+depth, and status in the bridge ledger.
 
 ### Step 4: Optional Local Enrichment
 

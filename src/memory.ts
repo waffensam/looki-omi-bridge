@@ -8,6 +8,7 @@ import type {
 } from "./contracts.js";
 
 const ISO_DATE_PREFIX = /^\d{4}[-/]\d{1,2}[-/]\d{1,2}[，,\s:：-]+/;
+const OMI_EXPLICIT_MEMORY_TEXT_PLACEHOLDER = ".";
 const CJK_RE = /[\u3400-\u9fff]/g;
 const NARRATIVE_MEMORY_MARKERS = [
   /^一次/,
@@ -132,7 +133,7 @@ export function buildOmiIntegrationMemoryImportPayload(
   }
 
   return {
-    text: candidate.content.trim(),
+    text: OMI_EXPLICIT_MEMORY_TEXT_PLACEHOLDER,
     text_source: "other",
     text_source_spec: "Looki selected memory candidate",
     memories: [
@@ -141,6 +142,22 @@ export function buildOmiIntegrationMemoryImportPayload(
         tags: buildMemoryTags(candidate),
       },
     ],
+  };
+}
+
+export function buildOmiIntegrationMemoryTextPayload(
+  text: string,
+  textSourceSpec: string,
+): OmiIntegrationMemoryImportPayload {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    throw new Error("Omi native memory extraction text is required");
+  }
+
+  return {
+    text: trimmed,
+    text_source: "other",
+    text_source_spec: textSourceSpec,
   };
 }
 

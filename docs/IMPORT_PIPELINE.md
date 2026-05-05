@@ -10,8 +10,8 @@ The daily run has two explicit lanes:
 Looki For You is never imported as a conversation. In the conversation lane it
 is only an optional user-facing description that helps identify relevant audio.
 In the memory lane, For You and moments are separate selectable sources. The UI
-does not force cross-matching between them; selected For You items can be passed
-as LLM context for memory generation.
+does not force cross-matching between them. Selected sources are submitted as
+text to Omi's native memory extraction.
 
 ```text
 date = yesterday in user's Looki timezone
@@ -76,8 +76,8 @@ idempotency_key = looki:conversation:{moment_id}:{start_time}
 For the memory lane, selectable source ids can be either `moment:{id}` or
 `for_you:{id}`. Moment jobs start from moment title/description. For You jobs
 start from sanitized For You content. If the user selects both, selected For You
-ids are stored in the queued moment job as LLM context rather than inferred by
-hidden matching.
+ids are stored in the queued moment job as additional Omi source text rather
+than inferred by hidden matching.
 
 ```text
 idempotency_key = looki:memory:{event_date}:{event_type}:{stable_source_id}
@@ -187,19 +187,15 @@ The memory lane starts after discovery and targeted evidence gathering.
 
 ### Omi Memory Write
 
-Write core memory data through the Omi Integration API first.
+Submit selected memory source text through the Omi Integration API and let Omi
+apply its native memory extraction. Do not send `memories[]` in the default
+hosted app path because Omi will also extract from top-level `text`.
 
 ```json
 {
-  "text": "用户重视陪孩子参与户外活动。",
+  "text": "标题：家的暖色时光\n摘要：和家人一起在家中欣赏城市夜景。",
   "text_source": "other",
-  "text_source_spec": "Looki selected memory candidate",
-  "memories": [
-    {
-      "content": "用户重视陪孩子参与户外活动。",
-      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
-    }
-  ]
+  "text_source_spec": "looki:2026-05-04:for_you:example"
 }
 ```
 

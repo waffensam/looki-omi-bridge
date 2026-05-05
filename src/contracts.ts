@@ -115,7 +115,7 @@ export interface OmiIntegrationMemoryImportPayload {
   text: string;
   text_source: "other";
   text_source_spec: string;
-  memories: Array<{
+  memories?: Array<{
     content: string;
     tags: string[];
   }>;
@@ -167,6 +167,9 @@ export interface ImportLedgerRecord {
   };
   memory?: {
     content?: string;
+    extractionMode?: "omi_native" | "explicit";
+    sourceTextPreview?: string;
+    sourceTextSha256?: string;
     candidateIdempotencyKey?: string;
     writePolicy?: MemoryWritePolicy;
     evidenceDepth?: MemoryEvidenceDepth;
@@ -184,7 +187,11 @@ export interface ImportLedgerRecord {
   omi?: {
     conversationId?: string;
     memoryId?: string;
-    method?: "from_segments" | "text_fallback" | "memory_create";
+    method?:
+      | "from_segments"
+      | "text_fallback"
+      | "memory_create"
+      | "memory_native_extract";
     source?: "unknown" | "looki";
     richMetadataSynced?: boolean;
   };

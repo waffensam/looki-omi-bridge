@@ -24,16 +24,15 @@ Hosted Connector Backend ---- Import Ledger
   |
   +--> Provider Registry
   |     +--> ASR Adapter: XFYun or future provider
-  |     +--> LLM Memory Gate Adapter
-  |     +--> OCR/Multimodal Adapter
+  |     +--> Optional LLM/OCR/Multimodal Adapters
   |
   +--> Conversation Normalizer
   |
   +--> Conversation Value Gate -> Omi Conversation Import
   |
-  +--> Memory Candidate Builder
+  +--> Memory Source Builder
   |
-  +--> Memory Value Gate -> Omi Memory Write
+  +--> Omi Native Memory Extraction
   |
   +--> Optional Local Enrichment
   |
@@ -153,18 +152,20 @@ Call Omi `POST /v2/integrations/{app_id}/user/conversations` with transcript tex
 
 Use the same evidence stream when useful, but do not require every conversation import to become a memory.
 
-Good memory candidates are durable facts, meaningful personal milestones, or explicit user commitments. Routine daily activities should not be written.
+Good memory sources are durable facts, meaningful personal milestones, or explicit user commitments. Routine daily activities should not be submitted by default.
 
-Memory candidate generation and quality gating must call a provider-neutral LLM adapter. The prompt/schema belongs to the bridge; the model provider is replaceable.
+The hosted app default should not generate final memory text itself. Submit the
+selected Looki source text to Omi's native memory extraction so Omi owns wording,
+dedupe, and style. A provider-neutral LLM adapter can remain as an optional
+future pre-filter or enrichment step, but it is not the default memory writer.
 
-### 9. Write Memory Core
+### 9. Submit Memory Source
 
-Call the Omi Integration memory API for the durable core record:
+Call the Omi Integration memory API with text-only source payload:
 
-- `content`
-- `visibility`
-- `category`
-- `tags`
+- `text`
+- `text_source`
+- `text_source_spec`
 
 ### 10. Optional Local Enrichment
 

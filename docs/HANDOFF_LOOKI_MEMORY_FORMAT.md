@@ -124,27 +124,25 @@ POST /v2/integrations/{app_id}/user/memories?uid={user_id}
 Authorization: Bearer {OMI_APP_API_KEY}
 ```
 
-The App Integration API request should use explicit memory objects only:
+The App Integration API should default to Omi native extraction from `text`.
+Do not send `memories[]` by default. Current production behavior creates one
+memory from top-level `text` and another from explicit `memories[]`, so sending
+both with the same fact causes duplicates.
 
 ```json
 {
-  "text": "用户重视陪孩子参与户外活动。",
+  "text": "标题：家的暖色时光\n摘要：和家人一起在家中欣赏城市夜景。",
   "text_source": "other",
-  "text_source_spec": "Looki selected memory candidate",
-  "memories": [
-    {
-      "content": "用户重视陪孩子参与户外活动。",
-      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
-    }
-  ]
+  "text_source_spec": "looki:2026-05-04:for_you:example"
 }
 ```
 
-Do not include `contextSummary` as top-level `text` when writing explicit
-memories. It is local/ledger context, not a second cloud memory extraction
-source. The current Omi Integration API still requires `text`, so set `text`
-to the same short memory content and keep the top-level `text_source` fields
-generic.
+`text` is the only memory source for the hosted app path. Let Omi apply its
+native memory prompt and wording. Keep Looki provenance, source hashes, evidence
+depth, and selected item ids in the bridge ledger instead of cloud memory fields.
+
+Explicit `memories[]` should only be used if Omi exposes a separate explicit
+create endpoint or makes `text` optional for this route.
 
 Developer API alternative:
 

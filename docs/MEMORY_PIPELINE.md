@@ -11,18 +11,18 @@ It does not replace the conversation import lane. The two lanes share Looki disc
 
 ## Inputs
 
-Memory candidates can come from:
+Memory sources can come from:
 
 - Looki daily timeline titles and descriptions
 - sanitized For You items selected by the user
-- selected moment candidates, optionally with selected For You items as LLM context
+- selected moment candidates, optionally with selected For You items as extra Omi source text
 - user confirmation
 
 Do not deep-analyze original media for the memory lane by default. Omi memory is
 a lightweight core record, so the bridge uses moment title/description for the
 first pass and For You as Looki's already-processed enrichment layer. The UI
-does not need to display semantic clustering; memory synthesis happens inside
-the LLM gate.
+does not need to display semantic clustering; memory wording and extraction
+happen inside Omi's native memory pipeline.
 
 ## Candidate Shape
 
@@ -125,7 +125,8 @@ Use `never_write` for:
 
 ## Omi Write
 
-The durable core payload is `schemas/omi-memory-create.schema.json`:
+The durable explicit-memory core payload is `schemas/omi-memory-create.schema.json`,
+but this is not the default hosted app path:
 
 ```json
 {
@@ -136,21 +137,19 @@ The durable core payload is `schemas/omi-memory-create.schema.json`:
 }
 ```
 
-For this Omi App bridge, the hosted app-compatible write path is `POST /v2/integrations/{app_id}/user/memories?uid={user_id}` with explicit `memories[]` objects. Send only `content` and generated tags in each memory object; do not send `contextSummary` as top-level `text`. The current Omi Integration API requires `text`, so set it to the same short memory content.
+For this Omi App bridge, the hosted app-compatible write path is `POST /v2/integrations/{app_id}/user/memories?uid={user_id}` with text-only Omi native extraction. Do not send `memories[]` in the default path; sending both `text` and `memories[]` can create duplicate memories.
 
 ```json
 {
-  "text": "用户重视陪孩子参与户外活动。",
+  "text": "标题：家的暖色时光\n摘要：和家人一起在家中欣赏城市夜景。",
   "text_source": "other",
-  "text_source_spec": "Looki selected memory candidate",
-  "memories": [
-    {
-      "content": "用户重视陪孩子参与户外活动。",
-      "tags": ["looki", "looki_daily", "looki_2026_05_03", "family_milestone"]
-    }
-  ]
+  "text_source_spec": "looki:2026-05-04:for_you:example"
 }
 ```
+
+The bridge records source text hashes, previews, selected Looki ids, and import
+status in the ledger. Omi owns the final memory wording and may extract zero,
+one, or multiple memories from a selected source.
 
 If the bridge is running under a configured Omi Developer API key, use:
 

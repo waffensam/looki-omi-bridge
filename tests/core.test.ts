@@ -13,6 +13,7 @@ import {
 } from "@/src/looki-for-you";
 import {
   buildOmiIntegrationMemoryImportPayload,
+  buildOmiIntegrationMemoryTextPayload,
   buildOmiMemoryCreatePayload,
   contentLooksNarrativeSummary,
 } from "@/src/memory";
@@ -296,7 +297,7 @@ describe("memory payload boundaries", () => {
     );
 
     assert.deepEqual(payload, {
-      text: "用户重视陪孩子参与户外活动。",
+      text: ".",
       text_source: "other",
       text_source_spec: "Looki selected memory candidate",
       memories: [
@@ -311,6 +312,20 @@ describe("memory payload boundaries", () => {
         },
       ],
     });
+  });
+
+  it("builds text-only payloads for Omi native memory extraction", () => {
+    const payload = buildOmiIntegrationMemoryTextPayload(
+      "标题：城市夜景\n摘要：和家人一起在家欣赏城市夜景。",
+      "looki:2026-05-04:for_you:item-1",
+    );
+
+    assert.deepEqual(payload, {
+      text: "标题：城市夜景\n摘要：和家人一起在家欣赏城市夜景。",
+      text_source: "other",
+      text_source_spec: "looki:2026-05-04:for_you:item-1",
+    });
+    assert.equal("memories" in payload, false);
   });
 
   it("detects verbose event summaries that do not match Omi memory style", () => {

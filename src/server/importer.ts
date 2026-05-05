@@ -12,25 +12,30 @@ import type {
   ImportStage,
   ImportStatus,
   ImportTarget,
-  LookiMemoryCandidate,
 } from "@/src/contracts.js";
 import { sanitizeForYouItem } from "@/src/looki-for-you";
-import { shouldWriteMemory } from "@/src/memory";
 import { findAudioFile } from "./looki-client";
 import { getLookiClientForUid } from "./looki-profile";
 import { OmiIntegrationClient } from "./omi-client";
-import { ManagedMemoryGateProvider } from "./providers/memory-gate";
 import { XfyunAsrProvider } from "./providers/xfyun-asr";
 import { sha256 } from "./hash";
-import {
-  conversationIdempotencyKey,
-  memoryIdempotencyKey,
-} from "./idempotency";
+import { conversationIdempotencyKey } from "./idempotency";
 import { readTimeoutMs } from "./fetch-timeout";
 import { getStore } from "./store";
 
 const ACTIVE_STATUSES = new Set<ImportStatus>(["queued", "processing"]);
 const TERMINAL_STATUSES = new Set<ImportStatus>(["imported", "skipped"]);
+
+interface OmiNativeMemorySource {
+  text: string;
+  textSourceSpec: string;
+  sourceTextSha256: string;
+  sourceTextPreview: string;
+  eventDate: string;
+  eventType: string;
+  tags: string[];
+  forYouItemIds?: string[];
+}
 
 export interface ProcessQueuedImportsOptions {
   uid?: string;
@@ -306,147 +311,56 @@ async function processForYouMemoryJob(
   job: AppLedgerRecord,
   looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
 ): Promise<ImportResultItem> {
-  const memoryGate = new ManagedMemoryGateProvider();
   const omi = new OmiIntegrationClient();
-  const store = getStore();
   const forYouItemId =
     job.record.looki.forYouItemId || job.record.looki.momentId;
   const eventDate =
     job.record.memory?.eventDate || job.record.looki.startTime.slice(0, 10);
   let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] =
-    "memory";
+    "looki";
   let itemForFailure: SanitizedLookiForYouItem | undefined;
-  let candidateForFailure: LookiMemoryCandidate | undefined;
-  let providerForFailure: AppLedgerRecord["provider"] | undefined;
+  let sourceForFailure: OmiNativeMemorySource | undefined;
 
   try {
-    await updateProgress(job, "processing", "memory_gate", "筛选 For You 记忆");
+    await updateProgress(job, "processing", "looki", "读取 For You 内容");
     const item = await loadForYouItemById(looki, eventDate, forYouItemId);
     itemForFailure = item;
-    const syntheticMoment = syntheticMomentFromForYou(item, eventDate);
-    const ledger = await store.listLedger(uid);
-    const existingMemoryContents = ledger
-      .map((entry) => entry.record.memory?.content)
-      .filter(isString);
-    const { candidate: rawCandidate, audit } = await memoryGate.buildCandidate(
-      syntheticMoment,
-      existingMemoryContents,
-      [
-        {
-          ...item,
-          score: 1,
-          matchReason: "text",
-          role: "memory_evidence",
-        },
-      ],
-    );
-    providerForFailure = { memoryGate: audit };
-    const candidate: LookiMemoryCandidate = {
-      ...rawCandidate,
-      idempotencyKey: memoryIdempotencyKey(
-        eventDate,
-        rawCandidate.eventType,
-        `for_you:${item.id}`,
-      ),
-      eventDate,
-      sourceKind: "for_you",
-      sourceMomentIds: [item.id],
-      forYouItemIds: [item.id],
-      evidenceDepth: "for_you_enriched_summary",
-      tags: uniqueStrings([...rawCandidate.tags, "looki_for_you"]),
-    };
-    candidateForFailure = candidate;
-
-    const existingCandidate = await store.findLedger(
-      uid,
-      candidate.idempotencyKey,
-    );
-    if (
-      existingCandidate &&
-      existingCandidate.record.idempotencyKey !== job.record.idempotencyKey &&
-      existingCandidate.record.status === "imported"
-    ) {
-      await appendLedger(
-        uid,
-        buildForYouMemoryLedger(
-          item,
-          eventDate,
-          candidate,
-          "skipped",
-          undefined,
-          job.record.createdAt,
-          job.record.idempotencyKey,
-        ),
-        { memoryGate: audit },
-      );
-      return {
-        momentId: item.id,
-        target: "memory",
-        status: "skipped",
-        reason: "already_imported",
-        ...(existingCandidate.record.omi?.memoryId
-          ? { omiId: existingCandidate.record.omi.memoryId }
-          : {}),
-        candidate,
-      };
-    }
-
-    if (!shouldWriteMemory(candidate.writePolicy)) {
-      await appendLedger(
-        uid,
-        buildForYouMemoryLedger(
-          item,
-          eventDate,
-          candidate,
-          "skipped",
-          undefined,
-          job.record.createdAt,
-          job.record.idempotencyKey,
-        ),
-        { memoryGate: audit },
-      );
-      return {
-        momentId: item.id,
-        target: "memory",
-        status: "skipped",
-        reason: candidate.writePolicy,
-        candidate,
-      };
-    }
+    const source = buildForYouNativeMemorySource(item, eventDate);
+    sourceForFailure = source;
 
     failureStage = "omi";
-    await updateProgress(job, "processing", "memory_write", "写入 Omi memory");
-    const omiId = await omi.createMemory(uid, candidate);
+    await updateProgress(
+      job,
+      "processing",
+      "memory_write",
+      "交给 Omi 原生 memory 抽取",
+    );
+    await omi.importMemoryText(uid, source.text, source.textSourceSpec);
     await appendLedger(
       uid,
-      buildForYouMemoryLedger(
+      buildForYouNativeMemoryLedger(
         item,
         eventDate,
-        candidate,
+        source,
         "imported",
-        omiId,
         job.record.createdAt,
         job.record.idempotencyKey,
       ),
-      { memoryGate: audit },
     );
     return {
       momentId: item.id,
       target: "memory",
       status: "imported",
-      ...(omiId ? { omiId } : {}),
-      candidate,
     };
   } catch (error) {
     const failureRecord =
-      itemForFailure && candidateForFailure
+      itemForFailure && sourceForFailure
         ? buildFailedLedger(
-            buildForYouMemoryLedger(
+            buildForYouNativeMemoryLedger(
               itemForFailure,
               eventDate,
-              candidateForFailure,
+              sourceForFailure,
               "failed",
-              undefined,
               job.record.createdAt,
               job.record.idempotencyKey,
             ),
@@ -463,7 +377,6 @@ async function processForYouMemoryJob(
     await appendLedger(
       uid,
       failureRecord,
-      providerForFailure,
     );
     return {
       momentId: forYouItemId,
@@ -481,117 +394,51 @@ async function processMemoryJob(
   moment: LookiMoment,
   looki: Awaited<ReturnType<typeof getLookiClientForUid>>["client"],
 ): Promise<ImportResultItem> {
-  const memoryGate = new ManagedMemoryGateProvider();
   const omi = new OmiIntegrationClient();
-  const store = getStore();
   let failureStage: NonNullable<ImportLedgerRecord["error"]>["stage"] =
     "memory";
-  let candidateForFailure: LookiMemoryCandidate | undefined;
-  let providerForFailure: AppLedgerRecord["provider"] | undefined;
+  let sourceForFailure: OmiNativeMemorySource | undefined;
 
   try {
-    await updateProgress(job, "processing", "memory_gate", "筛选高价值记忆");
-    const ledger = await store.listLedger(uid);
-    const existingMemoryContents = ledger
-      .map((entry) => entry.record.memory?.content)
-      .filter(isString);
+    await updateProgress(job, "processing", "memory_gate", "准备 Omi 记忆来源");
     const forYouHints = await loadSelectedForYouHints(
       moment.date,
       job.record.memory?.forYouItemIds || [],
       looki,
     );
-    const { candidate, audit } = await memoryGate.buildCandidate(
-      moment,
-      existingMemoryContents,
-      forYouHints,
-    );
-    candidateForFailure = candidate;
-    providerForFailure = { memoryGate: audit };
-    const existingCandidate = await store.findLedger(
-      uid,
-      candidate.idempotencyKey,
-    );
-    if (
-      existingCandidate &&
-      existingCandidate.record.idempotencyKey !== job.record.idempotencyKey &&
-      existingCandidate.record.status === "imported"
-    ) {
-      await appendLedger(
-        uid,
-        buildMemoryLedger(
-          moment,
-          candidate,
-          "skipped",
-          undefined,
-          job.record.createdAt,
-          job.record.idempotencyKey,
-        ),
-        { memoryGate: audit },
-      );
-      return {
-        momentId: moment.id,
-        target: "memory",
-        status: "skipped",
-        reason: "already_imported",
-        ...(existingCandidate.record.omi?.memoryId
-          ? { omiId: existingCandidate.record.omi.memoryId }
-          : {}),
-        candidate,
-      };
-    }
-
-    if (!shouldWriteMemory(candidate.writePolicy)) {
-      await appendLedger(
-        uid,
-        buildMemoryLedger(
-          moment,
-          candidate,
-          "skipped",
-          undefined,
-          job.record.createdAt,
-          job.record.idempotencyKey,
-        ),
-        { memoryGate: audit },
-      );
-      return {
-        momentId: moment.id,
-        target: "memory",
-        status: "skipped",
-        reason: candidate.writePolicy,
-        candidate,
-      };
-    }
+    const source = buildMomentNativeMemorySource(moment, forYouHints);
+    sourceForFailure = source;
 
     failureStage = "omi";
-    await updateProgress(job, "processing", "memory_write", "写入 Omi memory");
-    const omiId = await omi.createMemory(uid, candidate);
+    await updateProgress(
+      job,
+      "processing",
+      "memory_write",
+      "交给 Omi 原生 memory 抽取",
+    );
+    await omi.importMemoryText(uid, source.text, source.textSourceSpec);
     await appendLedger(
       uid,
-      buildMemoryLedger(
+      buildNativeMemoryLedger(
         moment,
-        candidate,
+        source,
         "imported",
-        omiId,
         job.record.createdAt,
         job.record.idempotencyKey,
       ),
-      { memoryGate: audit },
     );
     return {
       momentId: moment.id,
       target: "memory",
       status: "imported",
-      ...(omiId ? { omiId } : {}),
-      candidate,
     };
   } catch (error) {
-    const failureRecord = candidateForFailure
+    const failureRecord = sourceForFailure
       ? buildFailedLedger(
-          buildMemoryLedger(
+          buildNativeMemoryLedger(
             moment,
-            candidateForFailure,
+            sourceForFailure,
             "failed",
-            undefined,
             job.record.createdAt,
             job.record.idempotencyKey,
           ),
@@ -603,7 +450,6 @@ async function processMemoryJob(
     await appendLedger(
       uid,
       failureRecord,
-      providerForFailure,
     );
     return {
       momentId: moment.id,
@@ -818,47 +664,109 @@ function buildQueuedForYouLedger(
   };
 }
 
-function buildMemoryLedger(
+function buildMomentNativeMemorySource(
   moment: LookiMoment,
-  candidate: LookiMemoryCandidate,
+  forYouHints: Awaited<ReturnType<typeof loadSelectedForYouHints>>,
+): OmiNativeMemorySource {
+  const text = compactLines([
+    `标题：${moment.title}`,
+    moment.description ? `摘要：${moment.description}` : "",
+    ...forYouHints.flatMap((item) => [
+      `精选标题：${item.title}`,
+      item.description ? `精选摘要：${item.description}` : "",
+      item.content ? `精选内容：${item.content}` : "",
+    ]),
+  ]);
+  const tags = uniqueStrings([
+    "looki",
+    "looki_daily",
+    `looki_${moment.date.replaceAll("-", "_")}`,
+    "omi_native_extract",
+  ]);
+  return buildNativeMemorySource({
+    text,
+    textSourceSpec: `looki:${moment.date}:moment:${moment.id}`,
+    eventDate: moment.date,
+    eventType: "omi_native_extract",
+    tags,
+    forYouItemIds: forYouHints.map((item) => item.id),
+  });
+}
+
+function buildForYouNativeMemorySource(
+  item: SanitizedLookiForYouItem,
+  date: string,
+): OmiNativeMemorySource {
+  const text = compactLines([
+    `标题：${item.title}`,
+    item.description ? `摘要：${item.description}` : "",
+    item.content ? `内容：${item.content}` : "",
+  ]);
+  const tags = uniqueStrings([
+    "looki",
+    "looki_daily",
+    `looki_${date.replaceAll("-", "_")}`,
+    "looki_for_you",
+    "omi_native_extract",
+  ]);
+  return buildNativeMemorySource({
+    text,
+    textSourceSpec: `looki:${date}:for_you:${item.id}`,
+    eventDate: date,
+    eventType: "omi_native_extract",
+    tags,
+    forYouItemIds: [item.id],
+  });
+}
+
+function buildNativeMemorySource(input: {
+  text: string;
+  textSourceSpec: string;
+  eventDate: string;
+  eventType: string;
+  tags: string[];
+  forYouItemIds?: string[];
+}): OmiNativeMemorySource {
+  const text = input.text.trim();
+  return {
+    text,
+    textSourceSpec: input.textSourceSpec,
+    sourceTextSha256: sha256(text),
+    sourceTextPreview: text.slice(0, 180),
+    eventDate: input.eventDate,
+    eventType: input.eventType,
+    tags: input.tags,
+    ...(input.forYouItemIds?.length
+      ? { forYouItemIds: input.forYouItemIds }
+      : {}),
+  };
+}
+
+function buildNativeMemoryLedger(
+  moment: LookiMoment,
+  source: OmiNativeMemorySource,
   status: ImportStatus,
-  memoryId?: string,
   createdAt?: string,
-  idempotencyKey = candidate.idempotencyKey,
+  idempotencyKey = source.textSourceSpec,
 ): ImportLedgerRecord {
   const now = new Date().toISOString();
   return {
     idempotencyKey,
     target: "memory",
     status,
-    decision:
-      status === "imported"
-        ? "import"
-        : candidate.writePolicy === "stage_only"
-          ? "review"
-          : "skip",
+    decision: "import",
     looki: buildLookiLedger(moment),
-    memory: {
-      content: candidate.content,
-      candidateIdempotencyKey: candidate.idempotencyKey,
-      writePolicy: candidate.writePolicy,
-      evidenceDepth: candidate.evidenceDepth,
-      confidence: candidate.confidence,
-      eventDate: candidate.eventDate,
-      eventType: candidate.eventType,
-      tags: candidate.tags,
-      ...(candidate.forYouItemIds?.length
-        ? { forYouItemIds: candidate.forYouItemIds }
-        : {}),
-    },
+    memory: buildNativeMemoryMetadata(source),
     omi: {
-      ...(memoryId ? { memoryId } : {}),
-      method: "memory_create",
+      method: "memory_native_extract",
       source: "looki",
     },
     progress: {
       stage: "done",
-      message: status === "imported" ? "Omi memory 已写入" : "Memory 已跳过",
+      message:
+        status === "imported"
+          ? "Omi native memory extraction 已提交"
+          : "Omi native memory extraction 失败",
       updatedAt: now,
     },
     createdAt: createdAt || now,
@@ -866,14 +774,13 @@ function buildMemoryLedger(
   };
 }
 
-function buildForYouMemoryLedger(
+function buildForYouNativeMemoryLedger(
   item: SanitizedLookiForYouItem,
   date: string,
-  candidate: LookiMemoryCandidate,
+  source: OmiNativeMemorySource,
   status: ImportStatus,
-  memoryId?: string,
   createdAt?: string,
-  idempotencyKey = candidate.idempotencyKey,
+  idempotencyKey = source.textSourceSpec,
 ): ImportLedgerRecord {
   const now = new Date().toISOString();
   const recordedAt = safeDateTime(item.recordedAt, date);
@@ -881,12 +788,7 @@ function buildForYouMemoryLedger(
     idempotencyKey,
     target: "memory",
     status,
-    decision:
-      status === "imported"
-        ? "import"
-        : candidate.writePolicy === "stage_only"
-          ? "review"
-          : "skip",
+    decision: "import",
     looki: {
       sourceType: "for_you",
       momentId: item.id,
@@ -896,29 +798,37 @@ function buildForYouMemoryLedger(
       endTime: recordedAt,
       mediaTypes: item.mediaTypes,
     },
-    memory: {
-      content: candidate.content,
-      candidateIdempotencyKey: candidate.idempotencyKey,
-      writePolicy: candidate.writePolicy,
-      evidenceDepth: candidate.evidenceDepth,
-      confidence: candidate.confidence,
-      eventDate: candidate.eventDate,
-      eventType: candidate.eventType,
-      tags: candidate.tags,
-      forYouItemIds: [item.id],
-    },
+    memory: buildNativeMemoryMetadata(source),
     omi: {
-      ...(memoryId ? { memoryId } : {}),
-      method: "memory_create",
+      method: "memory_native_extract",
       source: "looki",
     },
     progress: {
       stage: "done",
-      message: status === "imported" ? "Omi memory 已写入" : "Memory 已跳过",
+      message:
+        status === "imported"
+          ? "Omi native memory extraction 已提交"
+          : "Omi native memory extraction 失败",
       updatedAt: now,
     },
     createdAt: createdAt || now,
     updatedAt: now,
+  };
+}
+
+function buildNativeMemoryMetadata(
+  source: OmiNativeMemorySource,
+): NonNullable<ImportLedgerRecord["memory"]> {
+  return {
+    extractionMode: "omi_native",
+    sourceTextPreview: source.sourceTextPreview,
+    sourceTextSha256: source.sourceTextSha256,
+    eventDate: source.eventDate,
+    eventType: source.eventType,
+    tags: source.tags,
+    ...(source.forYouItemIds?.length
+      ? { forYouItemIds: source.forYouItemIds }
+      : {}),
   };
 }
 
@@ -1127,6 +1037,10 @@ function timezoneOffsetFromIso(value: string): string {
 
 function uniqueStrings(values: string[]): string[] {
   return [...new Set(values.map((value) => value.trim()).filter(Boolean))];
+}
+
+function compactLines(values: string[]): string {
+  return values.map((value) => value.trim()).filter(Boolean).join("\n");
 }
 
 function stageToProgress(

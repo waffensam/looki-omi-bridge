@@ -1,21 +1,8 @@
-import type {
-  LookiMemoryCandidate,
-  NormalizedTranscript,
-} from "@/src/contracts.js";
-import { buildOmiIntegrationMemoryImportPayload } from "@/src/memory";
+import type { NormalizedTranscript } from "@/src/contracts.js";
+import { buildOmiIntegrationMemoryTextPayload } from "@/src/memory";
 import { getOmiIntegrationConfig } from "./config";
 import { fetchWithTimeout, readTimeoutMs } from "./fetch-timeout";
 import { joinUrl } from "./url";
-
-interface IntegrationMemory {
-  id: string;
-  content: string;
-  tags?: string[];
-}
-
-interface IntegrationMemoriesResponse {
-  memories: IntegrationMemory[];
-}
 
 interface IntegrationConversation {
   id: string;
@@ -40,25 +27,16 @@ export class OmiIntegrationClient {
     this.apiKey = config.apiKey;
   }
 
-  async createMemory(
+  async importMemoryText(
     uid: string,
-    candidate: LookiMemoryCandidate,
-  ): Promise<string | undefined> {
+    text: string,
+    textSourceSpec: string,
+  ): Promise<void> {
     await this.post(
       `/v2/integrations/${encodeURIComponent(this.appId)}/user/memories`,
       uid,
-      buildOmiIntegrationMemoryImportPayload(candidate),
+      buildOmiIntegrationMemoryTextPayload(text, textSourceSpec),
     );
-
-    const memories = await this.get<IntegrationMemoriesResponse>(
-      `/v2/integrations/${encodeURIComponent(this.appId)}/memories`,
-      uid,
-      { limit: "1000", offset: "0" },
-      readTimeoutMs("OMI_VERIFY_TIMEOUT_MS", 10_000),
-    ).catch(() => undefined);
-    return memories?.memories.find(
-      (memory) => memory.content === candidate.content,
-    )?.id;
   }
 
   async createConversation(

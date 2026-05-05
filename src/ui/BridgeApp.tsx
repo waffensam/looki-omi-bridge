@@ -696,7 +696,7 @@ function MemoryImportView({
         busy={busy}
         detail={`${forYouItems.length} For You · ${moments.length} moments · 已选 ${selectedCount}`}
         label="导入记忆"
-        note="默认勾选非当日背景的 For You；moments 默认不勾选。导入后由后台 LLM 合成与去重。"
+        note="默认勾选非当日背景的 For You；moments 默认不勾选。导入后交给 Omi 原生记忆抽取。"
         selectedCount={selectedCount}
         onImport={onImport}
       />
